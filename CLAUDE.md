@@ -31,6 +31,7 @@ wp-arsenal/
 │   ├── config_loader.py             ← YAML config → argparse merger
 │   ├── security/                    ← wp-scan, wp-deep-audit, wp-chmod-fix, wp-shell-nuke
 │   ├── restoration/                 ← wp-restore-core, wp-plugin-restore, wp-elementor-fix
+│   ├── management/                  ← wp-backup, wp-update, wp-user-audit, wp-multisite
 │   ├── hardening/
 │   │   ├── wp-harden.py
 │   │   ├── wp-firewall.py
@@ -39,11 +40,12 @@ wp-arsenal/
 │   │       ├── mail-kill.php
 │   │       ├── login-monitor.php
 │   │       ├── honeypot.php
-│   │       └── ip-blocker.php
+│   │       ├── ip-blocker.php
+│   │       └── file-monitor.php     ← hourly file-change detection + email alert
 │   └── forensics/                   ← wp-forensics, wp-db-audit, wp-attacker-profile
-├── skills/{security,management,theme-design,forensics}/*/SKILL.md
-├── agents/*.md                      ← multi-step orchestration plans
-├── personas/*.md                    ← security-analyst, wordpress-expert, theme-designer
+├── skills/{security,management,forensics}/*/SKILL.md
+├── agents/*.md                      ← incident-responder, security-auditor, restoration, maintenance
+├── personas/*.md                    ← security-analyst, wordpress-expert, theme-designer, site-manager
 └── memory/site-credentials.md      ← gitignored — your actual credentials
 ```
 
@@ -104,6 +106,7 @@ cp scripts/hardening/mu-plugins/honeypot.php      /your/wp/wp-content/mu-plugins
 cp scripts/hardening/mu-plugins/login-monitor.php  /your/wp/wp-content/mu-plugins/
 cp scripts/hardening/mu-plugins/ip-blocker.php     /your/wp/wp-content/mu-plugins/
 # mail-kill.php only if you want to suppress ALL outbound email during cleanup
+# file-monitor.php for hourly file-change detection
 ```
 
 ## Safety rules (always enforced)
