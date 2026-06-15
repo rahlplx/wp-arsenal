@@ -66,6 +66,15 @@ sibling_sites:
   # - path: "/var/www/html/site2"
   #   name: "site2.com"
 
+# ── SMTP (for wp-digest.py weekly email reports) ──────────────────────────
+# Leave blank to use --print-only mode instead
+smtp:
+  host: ""                     # e.g. "mail.yourdomain.com" or "smtp.gmail.com"
+  port: 587                    # 587 = STARTTLS (recommended), 465 = SSL, 25 = plain
+  user: ""                     # SMTP username (usually your email address)
+  password: ""                 # SMTP password or app-specific password
+  from_addr: ""                # From address (defaults to smtp.user if blank)
+
 # ── MU-Plugin deployment ───────────────────────────────────────────────────
 mu_plugins:
   # These are written to the target site's wp-content/mu-plugins/ directory
@@ -74,3 +83,4 @@ mu_plugins:
     honeypot: true             # Hidden trap link + JS fingerprinting
     login_monitor: true        # Email alert on admin login from unknown IP
     ip_blocker: true           # PHP-level IP block (belt-and-suspenders)
+    file_monitor: false        # Hourly file-change detection (email alert)
