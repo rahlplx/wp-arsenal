@@ -84,3 +84,14 @@ mu_plugins:
     login_monitor: true        # Email alert on admin login from unknown IP
     ip_blocker: true           # PHP-level IP block (belt-and-suspenders)
     file_monitor: false        # Hourly file-change detection (email alert)
+    rate_limiter: true         # Login brute-force rate limiting (no plugin needed)
+    xmlrpc_kill: true          # Disable XML-RPC at PHP level
+    admin_guard: false         # Restrict wp-admin to trusted IPs at PHP level
+    security_headers: true     # HTTP security headers (HSTS, CSP, X-Frame, etc.)
+
+# ── WordPress Network / Multisite ─────────────────────────────────────────
+# Only needed if this WP install is a Network (Multisite)
+network:
+  enabled: false               # Set true if MULTISITE is in wp-config.php
+  # Network-level DB prefix is typically wp_ (same as single site)
+  # Sub-site tables use wp_2_options, wp_3_options, etc.

@@ -31,17 +31,21 @@ wp-arsenal/
 │   ├── config_loader.py             ← YAML config → argparse merger
 │   ├── security/                    ← wp-scan, wp-deep-audit, wp-chmod-fix, wp-shell-nuke
 │   ├── restoration/                 ← wp-restore-core, wp-plugin-restore, wp-elementor-fix
-│   ├── management/                  ← wp-backup, wp-update, wp-user-audit, wp-multisite
+│   ├── management/                  ← wp-backup, wp-update, wp-user-audit, wp-multisite, wp-network-audit
 │   ├── hardening/
 │   │   ├── wp-harden.py
 │   │   ├── wp-firewall.py
 │   │   └── mu-plugins/              ← deploy to wp-content/mu-plugins/
 │   │       ├── wp-arsenal-config.php.example  ← COPY + FILL IN per site
-│   │       ├── mail-kill.php
-│   │       ├── login-monitor.php
-│   │       ├── honeypot.php
-│   │       ├── ip-blocker.php
-│   │       └── file-monitor.php     ← hourly file-change detection + email alert
+│   │       ├── mail-kill.php         ← suppress all WP mail (cleanup mode)
+│   │       ├── login-monitor.php     ← alert on admin login from unknown IP
+│   │       ├── honeypot.php          ← trap + WebRTC/canvas fingerprinting
+│   │       ├── ip-blocker.php        ← PHP-level IP block (known-bad IPs)
+│   │       ├── file-monitor.php      ← hourly file-change detection + alert
+│   │       ├── rate-limiter.php      ← login brute-force lockout via transients
+│   │       ├── xmlrpc-kill.php       ← disable XML-RPC + pingbacks at PHP level
+│   │       ├── admin-guard.php       ← restrict wp-admin to trusted IPs only
+│   │       └── security-headers.php  ← HSTS, CSP, X-Frame, Referrer-Policy
 │   └── forensics/                   ← wp-forensics, wp-db-audit, wp-attacker-profile
 ├── skills/{security,management,forensics}/*/SKILL.md
 ├── agents/*.md                      ← incident-responder, security-auditor, restoration, maintenance
@@ -105,8 +109,11 @@ cp scripts/hardening/mu-plugins/wp-arsenal-config.php.example \
 cp scripts/hardening/mu-plugins/honeypot.php      /your/wp/wp-content/mu-plugins/
 cp scripts/hardening/mu-plugins/login-monitor.php  /your/wp/wp-content/mu-plugins/
 cp scripts/hardening/mu-plugins/ip-blocker.php     /your/wp/wp-content/mu-plugins/
-# mail-kill.php only if you want to suppress ALL outbound email during cleanup
-# file-monitor.php for hourly file-change detection
+# mail-kill.php for cleanup-mode mail suppression
+# rate-limiter.php for brute-force protection (recommended)
+# xmlrpc-kill.php to disable XML-RPC (unless using Jetpack)
+# admin-guard.php to restrict wp-admin to trusted IPs
+# security-headers.php for HTTP security headers (recommended)
 ```
 
 ## Safety rules (always enforced)
