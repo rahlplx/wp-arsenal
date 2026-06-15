@@ -1,0 +1,7 @@
+memory/site-credentials.md
+memory/secrets.md
+*.pyc
+__pycache__/
+.env
+*.tar.gz
+/tmp/

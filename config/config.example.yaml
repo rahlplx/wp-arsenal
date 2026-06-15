@@ -1,0 +1,76 @@
+# WP-Arsenal Site Configuration
+# Copy to config.yaml and fill in your values.
+# config.yaml is gitignored — never commit it.
+#
+# Usage: python scripts/security/wp-scan.py --config config/config.yaml
+#        (or pass all values as CLI flags — config just saves typing)
+
+# ── SSH Connection ─────────────────────────────────────────────────────────
+ssh:
+  host: "ssh.yourhostingprovider.com"   # SSH hostname from your hosting panel
+  user: "youruser"                       # SSH username
+  password: "YourSSHPassword"            # SSH password (or leave blank and use key_file)
+  port: 22
+  key_file: ""                           # Path to private key (optional — use instead of password)
+
+# ── WordPress Installation ─────────────────────────────────────────────────
+wordpress:
+  path: "/var/www/html"                 # Absolute path to WP root on the server
+  site_url: "https://yoursite.com"      # Public URL for HTTP probes
+
+# ── Database ───────────────────────────────────────────────────────────────
+database:
+  host: "localhost"
+  user: "dbuser"
+  password: "dbpassword"
+  name: "dbname"
+  prefix: "wp_"                         # WP table prefix (check wp-config.php)
+
+# ── Alerts ─────────────────────────────────────────────────────────────────
+alerts:
+  email: "you@example.com"              # Where security alerts are sent
+  # Optional: bcc a second address (e.g. for deterrence after identifying attacker)
+  bcc: ""
+
+# ── Trusted IPs (never alert on, never block) ──────────────────────────────
+# Add your hosting provider's monitoring IPs, your office IP, etc.
+trusted_cidrs:
+  - "127.0.0.1"
+  - "::1"
+  # Examples:
+  # - "82.165."        # IONOS monitoring
+  # - "203.0.113."     # Your office IP range
+
+# ── Blocked IPs (deny all access) ─────────────────────────────────────────
+# Add attacker IPs here — populated from wp-attacker-profile output
+blocked_cidrs: []
+  # Examples:
+  # - "192.0.2.100"
+  # - "198.51.100.0/24"
+
+# ── Hosting provider hints (optional — improves script behaviour) ──────────
+hosting:
+  provider: ""          # e.g. "ionos", "siteground", "wpengine", "kinsta", "bluehost"
+  # If specified, scripts apply provider-specific optimisations:
+  #   ionos      — suppresses 82.165.x monitoring IPs in alerts
+  #   siteground — uses SG Optimizer cache paths
+  #   wpengine   — skips .htaccess writes (WP Engine uses Nginx)
+  #   kinsta     — skips .htaccess writes, uses Redis cache clear
+
+# ── Sibling sites on same server (for plugin restoration) ─────────────────
+# If you have multiple WP sites on the same server, listing them here
+# lets wp-plugin-restore copy plugins instantly without downloading.
+sibling_sites:
+  []
+  # Examples:
+  # - path: "/var/www/html/site2"
+  #   name: "site2.com"
+
+# ── MU-Plugin deployment ───────────────────────────────────────────────────
+mu_plugins:
+  # These are written to the target site's wp-content/mu-plugins/ directory
+  deploy:
+    mail_kill: false           # Block all outbound WP email (useful during repairs)
+    honeypot: true             # Hidden trap link + JS fingerprinting
+    login_monitor: true        # Email alert on admin login from unknown IP
+    ip_blocker: true           # PHP-level IP block (belt-and-suspenders)

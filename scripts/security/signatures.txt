@@ -1,0 +1,60 @@
+# WP-Arsenal Malware Signature Database
+# Format: SEVERITY|CATEGORY|PATTERN|DESCRIPTION
+# Used by: wp-scan.py, wp-deep-audit.py
+# Last updated: 2026-06-16
+
+# ── Shell Toolkits ────────────────────────────────────────────────────────────
+CRITICAL|shell-toolkit|c99shell|r57shell|FilesMan|b374k|WSO\s+Shell|C99/R57/WSO/b374k webshell toolkit
+CRITICAL|shell-toolkit|Nyx_Fallaga|TFMshell|GhostShell|AnonymousFox|Nyx/TFM/AnonymousFox (Sylhet BD group)
+CRITICAL|shell-toolkit|Ice FileSMan|Cyber Shell|phpspy|PHP spy shells
+
+# ── Code Execution Obfuscation ────────────────────────────────────────────────
+CRITICAL|obfuscation|eval\s*\(\s*base64_decode|eval(base64_decode()) — classic obfuscation
+CRITICAL|obfuscation|eval\s*\(\s*gzinflate|eval(gzinflate()) — compressed payload
+CRITICAL|obfuscation|eval\s*\(\s*str_rot13|eval(str_rot13()) — ROT13 obfuscation
+CRITICAL|obfuscation|eval\s*\(\s*gzuncompress|eval(gzuncompress()) — zlib payload
+CRITICAL|obfuscation|eval\s*\(\s*strrev|eval(strrev()) — reverse string
+HIGH|obfuscation|preg_replace\s*\(\s*['"]/.*/e|preg_replace with /e flag (code exec)
+HIGH|obfuscation|create_function\s*\(|create_function() — obfuscated code exec
+HIGH|obfuscation|hex2bin\s*\(\s*['"][0-9a-f]{100}|Long hex-encoded payload
+
+# ── Remote Code Execution via HTTP ───────────────────────────────────────────
+CRITICAL|rce|assert\s*\(\s*\$_(POST|GET|REQUEST|COOKIE)|assert() from user input
+CRITICAL|rce|system\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)|system() from user input
+CRITICAL|rce|exec\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)|exec() from user input
+CRITICAL|rce|passthru\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)|passthru() from user input
+CRITICAL|rce|shell_exec\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)|shell_exec() from user input
+CRITICAL|rce|popen\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)|popen() from user input
+
+# ── Backdoor Patterns ────────────────────────────────────────────────────────
+HIGH|backdoor|auto_prepend_file\s*=|auto_prepend_file in PHP config (persistent backdoor)
+HIGH|backdoor|\$_COOKIE\s*\[\s*['"]\w+['"]\s*\]\s*\(\s*\$_(GET|POST)|Cookie-triggered code exec
+HIGH|backdoor|if\s*\(\s*md5\s*\(\s*\$_(GET|POST)|Password-gated shell
+
+# ── Injection into Content ────────────────────────────────────────────────────
+HIGH|inject|mail\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)|mail() from user input — spam injector
+HIGH|inject|<iframe[^>]+src=['"]http|External iframe injection
+HIGH|inject|<script[^>]+src=['"]http[^'"]+\.(ru|cn|tk|pw|xyz|top)|External script (malicious TLD)
+MEDIUM|inject|document\.write\s*\(\s*unescape\s*\(|document.write(unescape()) — obfuscated JS
+
+# ── Known Bad File Signatures ─────────────────────────────────────────────────
+CRITICAL|known-file|offline\.php|Nyx toolkit offline.php
+CRITICAL|known-file|functions-interpreter\.php|Nyx toolkit functions-interpreter.php
+CRITICAL|known-file|header-repository\.php|Nyx toolkit header-repository.php
+CRITICAL|known-file|index-more\.php|Nyx toolkit index-more.php
+CRITICAL|known-file|footer-class\.php|Nyx toolkit footer-class.php
+CRITICAL|known-file|cache-handler\.php|WPOC REST backdoor cache-handler
+CRITICAL|known-file|wp-term-meta\.php|WPOC REST backdoor wp-term-meta
+CRITICAL|known-file|sso\.php|WPOC REST backdoor sso
+CRITICAL|known-file|site-compat\.php|WPOC REST backdoor site-compat
+CRITICAL|known-file|http-insights\.php|WPOC REST backdoor http-insights
+HIGH|known-file|adminer\.php|Adminer DB admin tool (no business on web server)
+HIGH|known-file|filemanager\.php|File manager shell
+HIGH|known-file|wp-temp\.php|Temporary shell/backdoor
+
+# ── Configuration Tampering ───────────────────────────────────────────────────
+HIGH|config|AddHandler application/x-httpd-php|.htaccess PHP handler override
+HIGH|config|SetHandler application/x-httpd-php|.htaccess PHP handler override
+HIGH|config|Options \+Indexes|Directory listing enabled
+HIGH|config|Options Indexes|Directory listing enabled
+MEDIUM|config|RewriteRule.*http://|Redirect rule to external URL

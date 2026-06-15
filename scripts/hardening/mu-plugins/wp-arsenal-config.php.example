@@ -1,0 +1,44 @@
+<?php
+/**
+ * WP-Arsenal MU-Plugin Configuration
+ * ====================================
+ * Copy this file to wp-arsenal-config.php in the same directory.
+ * All WP-Arsenal MU-plugins include this file for their settings.
+ *
+ * Deploy to: wp-content/mu-plugins/wp-arsenal-config.php
+ */
+
+// ── Alert destination ──────────────────────────────────────────────────────
+define( 'WP_ARSENAL_ALERT_EMAIL', 'you@example.com' );    // Where security alerts go
+define( 'WP_ARSENAL_ALERT_FROM',  '' );                    // Leave blank to auto-detect from siteurl
+define( 'WP_ARSENAL_ALERT_BCC',   '' );                    // Optional BCC (e.g. monitoring service)
+
+// ── Trusted IPs — never alert or block ────────────────────────────────────
+// Add your hosting provider monitoring IPs, office IPs, your home IP, etc.
+define( 'WP_ARSENAL_TRUSTED_CIDRS', [
+    '127.0.0.1',
+    '::1',
+    // '82.165.',      // IONOS monitoring
+    // '203.0.113.',   // Your office
+] );
+
+// ── Blocked IPs — deny all access at PHP level ────────────────────────────
+// Populate from wp-attacker-profile output. For .htaccess-level blocks
+// (faster, before PHP runs) use wp-firewall.py --block-ip instead.
+define( 'WP_ARSENAL_BLOCKED_CIDRS', [
+    // '192.0.2.100',       // Example blocked IP
+    // '198.51.100.0/24',   // Example blocked range
+] );
+
+// ── Honeypot configuration ────────────────────────────────────────────────
+// Change this per site — must be unique and unguessable
+define( 'WP_ARSENAL_HONEYPOT_SECRET', 'change-me-to-random-string-per-site' );
+
+// ── Login monitor ─────────────────────────────────────────────────────────
+// Alert on admin login from IPs not in trusted list
+define( 'WP_ARSENAL_LOGIN_MONITOR_ENABLED', true );
+
+// ── Mail kill ─────────────────────────────────────────────────────────────
+// true = suppress ALL WP mail (use during malware cleanup to stop spam)
+// false = normal WP mail behaviour
+define( 'WP_ARSENAL_MAIL_KILL', false );
