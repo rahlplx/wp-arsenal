@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # WP-Arsenal — Claude Code Instructions
 
 > Host-agnostic WordPress AI Agent Skills Repository.
@@ -128,6 +132,31 @@ cp scripts/hardening/mu-plugins/ip-blocker.php     /your/wp/wp-content/mu-plugin
 2. **Forensics before cleanup** — run `wp-forensics` before `wp-shell-nuke`
 3. **Configure `trusted_cidrs`** — prevents accidental self-block in firewall
 4. **Never commit credentials** — `config.yaml` and `memory/site-credentials.md` are gitignored
+
+## Incident response workflow
+
+When fixing a compromised site, scripts run in this order — don't skip or
+reorder steps, since later steps assume earlier evidence/state exists:
+
+```
+1. TRIAGE      →  wp-scan             (what's wrong?)
+2. EVIDENCE    →  wp-forensics        (preserve before cleanup)
+3. PROFILE     →  wp-attacker-profile (who did it?)
+4. AUDIT       →  wp-deep-audit       (full damage assessment)
+5. CLEAN       →  wp-shell-nuke       (remove malware)
+6. DB AUDIT    →  wp-db-audit         (check for DB injections)
+7. RESTORE     →  wp-restore-core + wp-plugin-restore + wp-elementor-fix
+8. PERMISSIONS →  wp-chmod-fix
+9. HARDEN      →  wp-harden + wp-firewall
+10. VERIFY     →  wp-scan             (confirm clean)
+```
+
+## Verifying changes
+
+There is no automated test suite or linter in this repo. Validate changes by
+running the affected script with `--dry-run` against a real or staging
+WordPress site over SSH, then re-running without `--dry-run` once the
+preview looks correct.
 
 ## Supported hosts
 
