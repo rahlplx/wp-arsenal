@@ -1,0 +1,61 @@
+# Example GitHub Actions workflow — safe theme/plugin deploy on merge to main.
+#
+# Copy this into the repo that holds YOUR theme/plugin source code (e.g. a
+# custom child theme repo). It builds your local dist/ output and deploys it
+# via wp-ci-deploy.py, which backs up the target, deploys, runs a health
+# check, and auto-rolls back if the site breaks.
+#
+# Required GitHub Secrets:
+#   WP_SSH_HOST, WP_SSH_USER, WP_SSH_PASSWORD, WP_PATH, WP_SITE_URL
+
+name: Deploy Theme to Production
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout theme repo
+        uses: actions/checkout@v4
+
+      - name: Checkout wp-arsenal (deploy tooling)
+        uses: actions/checkout@v4
+        with:
+          repository: rahlplx/wp-arsenal
+          path: wp-arsenal
+
+      - name: Set up Node (if your theme build needs it)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build theme
+        run: |
+          npm ci
+          npm run build      # produces ./dist
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install wp-arsenal dependencies
+        run: pip install -r wp-arsenal/requirements.txt
+
+      - name: Deploy with health check + auto-rollback
+        run: |
+          python wp-arsenal/scripts/cicd/wp-ci-deploy.py \
+            --host "${{ secrets.WP_SSH_HOST }}" \
+            --user "${{ secrets.WP_SSH_USER }}" \
+            --password "${{ secrets.WP_SSH_PASSWORD }}" \
+            --wp-path "${{ secrets.WP_PATH }}" \
+            --site-url "${{ secrets.WP_SITE_URL }}" \
+            --local-path ./dist \
+            --remote-path wp-content/themes/my-theme
+
+      # If this step fails, the deploy job fails and the team is notified —
+      # wp-ci-deploy.py has already rolled the server back to the previous
+      # working version before exiting non-zero.

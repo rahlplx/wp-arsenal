@@ -29,10 +29,12 @@ wp-arsenal/
 ├── scripts/
 │   ├── wp_connect.py                ← shared SSH/SFTP/MySQL/HTTP library
 │   ├── config_loader.py             ← YAML config → argparse merger
-│   ├── security/                    ← wp-scan, wp-deep-audit, wp-chmod-fix, wp-shell-nuke, wp-theme-audit
+│   ├── security/                    ← wp-scan, wp-deep-audit, wp-chmod-fix, wp-shell-nuke, wp-theme-audit,
+│   │                                   wp-woo-audit
 │   ├── restoration/                 ← wp-restore-core, wp-plugin-restore, wp-elementor-fix
 │   ├── management/                  ← wp-backup, wp-update, wp-user-audit, wp-multisite, wp-network-audit,
 │   │                                   wp-report, wp-digest, wp-child-theme, wp-theme-switch
+│   ├── cicd/                        ← wp-ci-deploy.py — backup → deploy → health-check → auto-rollback
 │   ├── hardening/
 │   │   ├── wp-harden.py
 │   │   ├── wp-firewall.py
@@ -48,8 +50,10 @@ wp-arsenal/
 │   │       ├── admin-guard.php       ← restrict wp-admin to trusted IPs only
 │   │       └── security-headers.php  ← HSTS, CSP, X-Frame, Referrer-Policy
 │   └── forensics/                   ← wp-forensics, wp-db-audit, wp-attacker-profile
-├── skills/{security,management,forensics,theme-design}/*/SKILL.md
-│   └── theme-design/                ← kadence, elementor — design system + recovery guides
+├── skills/{security,management,forensics,theme-design,cicd}/*/SKILL.md
+│   ├── theme-design/                ← kadence, elementor — design system + recovery guides
+│   └── cicd/                        ← wp-ci-deploy — pipeline integration guide
+├── .github/workflows-examples/      ← copy into YOUR repo: scheduled scan + safe deploy templates
 ├── agents/*.md                      ← incident-responder, security-auditor, restoration, maintenance
 ├── personas/*.md                    ← security-analyst, wordpress-expert, theme-designer, site-manager
 └── memory/site-credentials.md      ← gitignored — your actual credentials
