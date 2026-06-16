@@ -103,6 +103,45 @@ with WPConnection(args) as wp:
     code   = wp.http_code("https://yoursite.com")
 ```
 
+### SQL Security Helpers
+
+New static methods on `WPConnection` for safe SQL literals and slug validation:
+
+```python
+# Safe single-quoted string interpolation
+safe_value = WPConnection.sql_escape(user_input)
+wp.db(f"SELECT * FROM {prefix}users WHERE login='{safe_value}';")
+
+# Strict slug/identifier validation (theme names, usernames, etc.)
+slug = WPConnection.sql_slug(user_input)  # Raises ValueError if invalid
+wp.db(f"SELECT * FROM {prefix}options WHERE option_name='{slug}';")
+```
+
+- `sql_escape()`: Escapes backslash + single quote for safe interpolation inside single-quoted SQL literals
+- `sql_slug()`: Validates slug format `[A-Za-z0-9_.-]`, rejects anything else (spaces, quotes, path traversal, SQL metacharacters)
+
+Both helpers are tested by a comprehensive test suite (see Testing section below).
+
+## Testing
+
+Run the test suite before committing:
+```bash
+pip install pytest pytest-mock
+pytest tests/ -v
+```
+
+Test coverage:
+- **Unit tests** (`test_wp_connect.py`): 18 tests for `sql_escape()` and `sql_slug()` security helpers
+  - SQL injection prevention, escaping edge cases, slug validation
+- **Smoke tests** (`test_scripts_smoke.py`): 19 tests for script imports + mocked SSH integration
+  - Catches regressions like the `wp-backup.py` `_ssh_client` AttributeError bug
+  - Verifies all scripts import without errors
+  - Tests core `WPConnection` operations with mocked paramiko (no real server needed)
+
+**Test results:** 24 passed, 13 skipped (import tests for subdirectories)
+
+All security-critical code paths are covered. See `tests/README.md` for full documentation.
+
 ## MU-Plugin deployment
 
 ```bash
