@@ -65,7 +65,9 @@ def get_theme_display_name(wp: WPConnection, slug: str) -> str:
 def set_theme(wp: WPConnection, slug: str, result: AuditResult) -> bool:
     """Update template, stylesheet, and current_theme in DB."""
     p = wp.db_prefix
+    slug = WPConnection.sql_slug(slug)
     display_name = get_theme_display_name(wp, slug)
+    safe_display_name = WPConnection.sql_escape(display_name)
 
     if wp.dry_run:
         info(f"[DRY-RUN] Would activate: {slug} ({display_name})")
@@ -76,7 +78,7 @@ def set_theme(wp: WPConnection, slug: str, result: AuditResult) -> bool:
         f"WHERE option_name IN ('template', 'stylesheet');"
     )
     wp.db_write(
-        f"UPDATE {p}options SET option_value='{display_name}' "
+        f"UPDATE {p}options SET option_value='{safe_display_name}' "
         f"WHERE option_name='current_theme';"
     )
 
@@ -99,6 +101,7 @@ def save_previous_theme(wp: WPConnection, current: dict) -> None:
     slug = current.get("template", "")
     if not slug:
         return
+    slug = WPConnection.sql_escape(slug)
     # Upsert
     existing = wp.db(
         f"SELECT COUNT(*) FROM {p}options WHERE option_name='{PREVIOUS_THEME_OPTION}';"

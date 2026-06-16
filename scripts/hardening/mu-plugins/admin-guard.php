@@ -74,12 +74,18 @@ function wp_arsenal_ag_is_login_page(): bool {
 }
 
 function wp_arsenal_ag_client_ip(): string {
-    // Respect Cloudflare real-IP and standard proxy headers
-    foreach (['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR'] as $h) {
-        $val = $_SERVER[$h] ?? '';
-        if ($val) return trim(explode(',', $val)[0]);
+    // Proxy headers (CF-Connecting-IP, X-Forwarded-For) are attacker-controlled
+    // unless the connection genuinely passed through a trusted proxy/CDN — trusting
+    // them unconditionally lets anyone spoof their way past the IP allowlist below.
+    // Only consult them if the site owner has confirmed a trusted proxy is in front
+    // by defining WP_ARSENAL_TRUST_PROXY_HEADERS = true in wp-arsenal-config.php.
+    if (defined('WP_ARSENAL_TRUST_PROXY_HEADERS') && WP_ARSENAL_TRUST_PROXY_HEADERS) {
+        foreach (['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR'] as $h) {
+            $val = $_SERVER[$h] ?? '';
+            if ($val) return trim(explode(',', $val)[0]);
+        }
     }
-    return '0.0.0.0';
+    return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
 }
 
 function wp_arsenal_ag_is_trusted(string $ip): bool {

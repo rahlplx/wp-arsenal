@@ -115,8 +115,9 @@ def get_session_ips(wp: WPConnection) -> dict[str, list[str]]:
 def delete_user(wp: WPConnection, login: str, result: AuditResult) -> None:
     """Delete a WordPress user by login (posts reassigned to user ID 1)."""
     p = wp.db_prefix
+    safe_login = WPConnection.sql_escape(login)
     uid_row = wp.db(
-        f"SELECT ID FROM {p}users WHERE user_login = '{login}' LIMIT 1;"
+        f"SELECT ID FROM {p}users WHERE user_login = '{safe_login}' LIMIT 1;"
     )
     uid = uid_row.strip().splitlines()[-1].strip() if uid_row.strip() else ""
     if not uid or not uid.isdigit():
@@ -142,8 +143,9 @@ def delete_user(wp: WPConnection, login: str, result: AuditResult) -> None:
 def demote_user(wp: WPConnection, login: str, new_role: str, result: AuditResult) -> None:
     """Change a user's WordPress role."""
     p = wp.db_prefix
+    safe_login = WPConnection.sql_escape(login)
     uid_row = wp.db(
-        f"SELECT ID FROM {p}users WHERE user_login = '{login}' LIMIT 1;"
+        f"SELECT ID FROM {p}users WHERE user_login = '{safe_login}' LIMIT 1;"
     )
     uid = uid_row.strip().splitlines()[-1].strip() if uid_row.strip() else ""
     if not uid or not uid.isdigit():
@@ -191,8 +193,9 @@ def kill_sessions(wp: WPConnection, target: str, result: AuditResult) -> None:
             ok("All WordPress sessions terminated")
             result.add("INFO", "sessions-killed", "All sessions terminated", "")
     else:
+        safe_target = WPConnection.sql_escape(target)
         uid_row = wp.db(
-            f"SELECT ID FROM {p}users WHERE user_login = '{target}' LIMIT 1;"
+            f"SELECT ID FROM {p}users WHERE user_login = '{safe_target}' LIMIT 1;"
         )
         uid = uid_row.strip().splitlines()[-1].strip() if uid_row.strip() else ""
         if not uid or not uid.isdigit():

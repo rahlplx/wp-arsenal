@@ -28,11 +28,17 @@ if (!defined('WP_ARSENAL_RATE_LIMIT_LOCKOUT')) define('WP_ARSENAL_RATE_LIMIT_LOC
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function wp_arsenal_rl_client_ip(): string {
-    foreach (['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR'] as $h) {
-        $val = $_SERVER[$h] ?? '';
-        if ($val) return trim(explode(',', $val)[0]);
+    // See admin-guard.php for rationale: proxy headers are spoofable unless a
+    // trusted proxy/CDN is confirmed in front of the site. An attacker could
+    // otherwise forge X-Forwarded-For to dodge their own lockout or frame
+    // another IP for one. Only trust these headers when explicitly enabled.
+    if (defined('WP_ARSENAL_TRUST_PROXY_HEADERS') && WP_ARSENAL_TRUST_PROXY_HEADERS) {
+        foreach (['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR'] as $h) {
+            $val = $_SERVER[$h] ?? '';
+            if ($val) return trim(explode(',', $val)[0]);
+        }
     }
-    return '0.0.0.0';
+    return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
 }
 
 function wp_arsenal_rl_is_trusted(string $ip): bool {

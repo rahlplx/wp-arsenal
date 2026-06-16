@@ -123,7 +123,7 @@ def download_backup(wp: WPConnection, remote_dir: str, local_dir: str, label: st
         info(f"Downloading {fname}...")
         try:
             import paramiko
-            transport = wp._ssh_client.get_transport()
+            transport = wp._client.get_transport()
             sftp = paramiko.SFTPClient.from_transport(transport)
             sftp.get(remote_path, local_path)
             size_bytes = os.path.getsize(local_path)

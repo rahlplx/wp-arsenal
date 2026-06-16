@@ -198,6 +198,7 @@ def generate_index_php() -> str:
 def activate_theme(wp: WPConnection, child_slug: str, result: AuditResult) -> None:
     """Activate the child theme by updating template and stylesheet DB options."""
     p = wp.db_prefix
+    child_slug = WPConnection.sql_slug(child_slug)
     if wp.dry_run:
         info(f"[DRY-RUN] Would activate theme: {child_slug}")
         return
@@ -262,9 +263,13 @@ def main() -> None:
             err("--parent is required. Use --list-parents to see available themes.")
             sys.exit(1)
 
-        parent_slug    = args.parent
-        child_name     = args.child_name or f"{parent_slug.replace('-', ' ').title()} Child"
-        child_slug     = args.child_slug or f"{parent_slug}-child"
+        try:
+            parent_slug = WPConnection.sql_slug(args.parent)
+            child_slug  = WPConnection.sql_slug(args.child_slug or f"{args.parent}-child")
+        except ValueError as exc:
+            err(str(exc))
+            sys.exit(1)
+        child_name = args.child_name or f"{parent_slug.replace('-', ' ').title()} Child"
         author         = args.author or "Site Owner"
         description    = args.description or f"Child theme for {parent_slug}"
         is_elementor   = parent_slug == "hello-elementor"

@@ -1,5 +1,9 @@
+config/config.yaml
+config/isp-map.yaml
+config/sites/
 memory/site-credentials.md
 memory/secrets.md
+logs/
 *.pyc
 __pycache__/
 .env

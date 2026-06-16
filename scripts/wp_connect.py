@@ -240,12 +240,36 @@ class WPConnection:
         if not all([self.db_host, self.db_user, self.db_pass, self.db_name]):
             warn("DB credentials not configured — skipping DB query")
             return ""
+        # Base64-encode the query so its content (quotes, $, backticks, etc.)
+        # can never be interpreted by the remote shell — only the SQL engine
+        # ever sees the literal bytes. The password goes via MYSQL_PWD instead
+        # of -p so it never shows up in the remote `ps` output.
+        import base64
+        sql_b64 = base64.b64encode(sql.encode("utf-8")).decode("ascii")
+        pass_escaped = self.db_pass.replace("'", "'\\''")
         cmd = (
-            f"mysql -h '{self.db_host}' -u '{self.db_user}' "
-            f"-p'{self.db_pass}' '{self.db_name}' "
-            f"-e \"{sql}\" 2>/dev/null"
+            f"MYSQL_PWD='{pass_escaped}' bash -c '"
+            f"echo {sql_b64} | base64 -d | mysql -h \"{self.db_host}\" -u \"{self.db_user}\" \"{self.db_name}\"'"
+            f" 2>/dev/null"
         )
         return self.ssh(cmd, timeout=timeout)
+
+    @staticmethod
+    def sql_escape(value: str) -> str:
+        """Escape a string for safe interpolation inside a single-quoted SQL literal."""
+        return value.replace("\\", "\\\\").replace("'", "\\'")
+
+    @staticmethod
+    def sql_slug(value: str) -> str:
+        """
+        Validate a value intended to be a WP slug/login/theme-stylesheet
+        (alphanumeric, dash, underscore, dot only). Raises ValueError if
+        the value contains anything else — use for values that should
+        never legitimately contain quotes or SQL metacharacters.
+        """
+        if not re.match(r"^[A-Za-z0-9_.\-]+$", value):
+            raise ValueError(f"Invalid slug/identifier: {value!r} — only [A-Za-z0-9_.-] allowed")
+        return value
 
     def db_write(self, sql: str, timeout: int = 30) -> str:
         """Run a mutating MySQL query. Respects --dry-run."""
