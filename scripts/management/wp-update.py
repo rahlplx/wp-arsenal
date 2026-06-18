@@ -159,7 +159,7 @@ def site_responds(wp: WPConnection) -> bool:
     if not wp.site_url:
         return True  # Can't check, assume ok
     code = wp.http_code(wp.site_url, timeout=15)
-    return code in (200, 301, 302)
+    return code in ("200", "301", "302")
 
 
 def get_installed_plugins(wp: WPConnection) -> list[str]:

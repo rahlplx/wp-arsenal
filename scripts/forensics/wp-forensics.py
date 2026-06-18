@@ -138,17 +138,14 @@ def collect_evidence(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
             f"{p}users", f"{p}usermeta", f"{p}options",
             f"{p}posts", f"{p}postmeta",
         ]
+        pass_escaped = wp.db_pass.replace("'", "'\\''")
         for table in tables:
-            dump = wp.ssh(
-                f"mysqldump -h '{wp.db_host}' -u '{wp.db_user}' "
-                f"-p'{wp.db_pass}' '{wp.db_name}' '{table}' 2>/dev/null | gzip",
-                timeout=120
-            )
-            # mysqldump binary — save via file
             wp.ssh(
-                f"mysqldump -h '{wp.db_host}' -u '{wp.db_user}' "
-                f"-p'{wp.db_pass}' '{wp.db_name}' '{table}' 2>/dev/null "
-                f"> '{evidence_dir}/db/{table}.sql'"
+                f"MYSQL_PWD='{pass_escaped}' mysqldump"
+                f" -h '{wp.db_host}' -u '{wp.db_user}'"
+                f" '{wp.db_name}' '{table}' 2>/dev/null"
+                f" > '{evidence_dir}/db/{table}.sql'",
+                timeout=120
             )
             ok(f"Dumped: {table}")
 

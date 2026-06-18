@@ -52,6 +52,9 @@ def _lookup_isp_from_map(ip: str, isp_map: dict) -> str:
 
 def _whois_lookup(wp: WPConnection, ip: str) -> str:
     """Do a whois lookup on the remote server (avoids local network restrictions)."""
+    import re
+    if not re.match(r"^[\d.:a-fA-F]+$", ip):
+        return "invalid IP"
     result = wp.ssh(f"whois '{ip}' 2>/dev/null | grep -E 'OrgName|org-name|netname|descr|owner' | head -3")
     return result.strip()[:200] if result.strip() else "whois unavailable"
 

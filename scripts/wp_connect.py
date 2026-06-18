@@ -111,6 +111,13 @@ class WPConnection:
     """
 
     def __init__(self, args: argparse.Namespace):
+        # Merge config.yaml values (CLI flags always win) — works for every script
+        # regardless of whether they use connect_from_args() or WPConnection(args) directly.
+        try:
+            import config_loader
+            args = config_loader.load_config(args)
+        except ImportError:
+            pass
         self.host      = args.host
         self.user      = args.user
         self.password  = args.password
@@ -246,7 +253,7 @@ class WPConnection:
         # of -p so it never shows up in the remote `ps` output.
         import base64
         sql_b64 = base64.b64encode(sql.encode("utf-8")).decode("ascii")
-        pass_escaped = self.db_pass.replace("'", "'\\''")
+        pass_escaped = self.db_pass.replace("\\", "\\\\").replace("'", "'\\''")
         cmd = (
             f"MYSQL_PWD='{pass_escaped}' bash -c '"
             f"echo {sql_b64} | base64 -d | mysql -h \"{self.db_host}\" -u \"{self.db_user}\" \"{self.db_name}\"'"
@@ -308,13 +315,8 @@ class WPConnection:
 # ── Convenience: build WPConnection from CLI args ───────────────────────────
 def connect_from_args(args: argparse.Namespace) -> WPConnection:
     """Construct and connect a WPConnection from parsed argparse args."""
-    # Merge config.yaml values before connecting
-    try:
-        import config_loader
-        args = config_loader.load_config(args)
-    except ImportError:
-        pass
     # Normalise list args that might come in as comma-separated strings
+    # (config loading happens inside WPConnection.__init__)
     for attr in ("trusted_cidrs", "blocked_cidrs"):
         val = getattr(args, attr, "") or ""
         if isinstance(val, str):
