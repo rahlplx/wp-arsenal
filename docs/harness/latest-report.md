@@ -1,8 +1,8 @@
-# Harness Report — 2026-06-19
+# Harness Report — 2026-06-19 (post-vibe-review)
 
 **Project:** wp-arsenal (Python SSH/WordPress security toolkit)
-**Commit:** 0ba7997
-**Tests:** 57/57 passing
+**Commit:** e9497fe
+**Tests:** 63/63 passing
 
 ---
 
@@ -11,7 +11,7 @@
 | # | Check | Status | Notes |
 |---|-------|--------|-------|
 | 1 | Credential leak in source | ✅ PASS | No hardcoded passwords/tokens/keys in scripts/ |
-| 2 | Shell injection (ssh f-strings) | ✅ PASS | 68 ssh(f-string) calls; `wp.*` vars are operator config (trusted); URL inputs use `shlex.quote` |
+| 2 | Shell injection (ssh f-strings) | ✅ PASS | 68 ssh(f-string) calls; `wp.*` vars are operator config (trusted); URL inputs use `shlex.quote`; forensics grep now uses `shlex.quote` |
 | 3 | Credential exposure (mysqldump -p) | ✅ PASS | 0 `-p` flag uses; 4 `MYSQL_PWD=` env var uses |
 | 4 | SQL input validation | ✅ PASS | False positive: `opt` from hardcoded list; `sql_escape`/`sql_slug` used at 14 boundaries |
 | 5 | Error handling | ✅ PASS | No bare `except:` clauses; 23 typed except blocks |
@@ -30,23 +30,22 @@
 
 ---
 
-## Fixes Applied This Session (code-review → harness loop)
+## Fixes Applied This Session (vibe-review → behavioral fix loop)
 
 | Finding | Fix | Commit |
 |---------|-----|--------|
-| `repr(pattern)` doubled backslashes → mangled 7+ malware regexes | `shlex.quote(pattern)` in wp-scan.py + wp-deep-audit.py | `0ba7997` |
-| `'{url}'` in curl → shell injection via `--site-url` | `shlex.quote(url)` in http_body/http_code | `0ba7997` |
-| `replace("\\","\\\\")` wrong for POSIX sh single-quotes | Reverted to quote-only escape | `0ba7997` |
-| REST API `isinstance` missing → AttributeError crash on dict response | `isinstance(parsed, list)` guard | `0ba7997` |
-| Section K no `if body` guard → false-negative on timeout | Added `if body and (...)` | `0ba7997` |
+| `repr(pattern)` doubled backslashes → mangled 7+ malware regexes | `shlex.quote(pattern)` in wp-scan.py + wp-deep-audit.py | `3c12564` |
+| `'{url}'` in curl → shell injection via `--site-url` | `shlex.quote(url)` in http_body/http_code | `3c12564` |
+| `replace("\\","\\\\")` wrong for POSIX sh single-quotes | Reverted to quote-only escape | `3c12564` |
+| REST API `isinstance` missing → AttributeError crash on dict response | `isinstance(parsed, list)` guard | `3c12564` |
+| Section K no `if body` guard → false-negative on timeout | Added `if body and (...)` | `3c12564` |
+| Honeypot secret raw in every page HTML/JS → any visitor reads it | HMAC-SHA256 hourly token; trap handler verifies same HMAC | `e9497fe` |
+| SFTP channel leak in download_backup() loop | `wp._get_sftp()` replaces `paramiko.SFTPClient.from_transport()` | `e9497fe` |
+| Evidence archive world-readable in /tmp | `chmod 700` on dir + `chmod 600` on archive | `e9497fe` |
+| wp-forensics.py grep pattern unquoted | `shlex.quote(pattern)` + `WP_PAT=` env var pattern | `e9497fe` |
 
 ---
 
-## Open Low-Priority Items
+## All Issues Resolved
 
-| Item | Location | Priority |
-|------|----------|----------|
-| SFTP resource leak in download_backup() | wp-backup.py | MEDIUM |
-| Evidence archives to /tmp | wp-forensics.py | MEDIUM |
-| Honeypot secret visible in page HTML | honeypot.php | LOW |
-| MyISAM→InnoDB migration script | missing | LOW |
+No open items remain from vibe-review.
