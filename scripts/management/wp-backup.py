@@ -36,7 +36,7 @@ def backup_database(wp: WPConnection, backup_dir: str, label: str) -> str | None
     dump_path = f"{backup_dir}/{label}-db.sql.gz"
     info(f"Dumping database to {dump_path}...")
 
-    pass_escaped = wp.db_pass.replace("\\", "\\\\").replace("'", "'\\''")
+    pass_escaped = wp.db_pass.replace("'", "'\\''")
     cmd = (
         f"MYSQL_PWD='{pass_escaped}' mysqldump"
         f" -h '{wp.db_host}'"

@@ -14,6 +14,8 @@ Output:
 
 import argparse
 import json
+import re
+import shlex
 import sys
 import os
 
@@ -169,7 +171,7 @@ def run_scan(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
         # Pass pattern via env var so bash never sees $ signs from the regex —
         # shell expansion of $_(POST|...) would silently break the grep match.
         hits = wp.ssh(
-            f"WP_PAT={repr(pattern)} grep -rl --include='*.php' -E \"$WP_PAT\" "
+            f"WP_PAT={shlex.quote(pattern)} grep -rl --include='*.php' -E \"$WP_PAT\" "
             f"'{wp.wp_path}' 2>/dev/null | grep -v '/node_modules/' | head -10"
         )
         if hits.strip():
@@ -253,7 +255,7 @@ def run_scan(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
         for rel_path, detail in DIR_LISTING_PATHS:
             url = f"{wp.site_url.rstrip('/')}/{rel_path}"
             body = wp.http_body(url)
-            if "Index of" in body or "Directory listing" in body:
+            if body and ("Index of" in body or "Directory listing" in body):
                 err(f"Directory listing enabled: {rel_path}")
                 result.add("HIGH", "directory-listing", detail, url)
                 dir_listing_found.append(rel_path)
@@ -269,8 +271,7 @@ def run_scan(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
             url = f"{wp.site_url.rstrip('/')}/{readme_file}"
             body = wp.http_body(url)
             if body and "wordpress" in body.lower():
-                import re as _re
-                ver_match = _re.search(r"Version\s+([\d.]+)", body)
+                ver_match = re.search(r"Version\s+([\d.]+)", body)
                 version = ver_match.group(1) if ver_match else "unknown"
                 warn(f"{readme_file} is publicly accessible (WP version: {version})")
                 result.add("MEDIUM", "version-disclosure", f"WP version {version} via {readme_file}", url)

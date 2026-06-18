@@ -314,31 +314,26 @@ def main() -> None:
 
         section("H. REST API user enumeration (zero-auth)")
         if wp.site_url:
-            # wp-json/wp/v2/users returns all usernames with no authentication —
-            # a critical recon endpoint attackers use before brute-forcing logins
             api_body = wp.http_body(f"{wp.site_url.rstrip('/')}/wp-json/wp/v2/users")
-            if api_body and '"slug"' in api_body:
-                import json as _json
+            if not api_body:
+                ok("REST API user enumeration not accessible")
+            else:
                 try:
-                    api_users = _json.loads(api_body)
-                    err(f"REST API user enumeration enabled — {len(api_users)} user(s) exposed:")
-                    for u in api_users:
-                        slug = u.get("slug", "")
-                        name = u.get("name", "")
-                        uid  = u.get("id", "")
-                        info(f"  ID={uid}  slug={slug}  name={name}")
+                    parsed = json.loads(api_body)
+                except json.JSONDecodeError:
+                    parsed = None
+
+                if isinstance(parsed, list) and parsed and all(isinstance(u, dict) for u in parsed):
+                    err(f"REST API user enumeration enabled — {len(parsed)} user(s) exposed:")
+                    for u in parsed:
+                        info(f"  ID={u.get('id','')}  slug={u.get('slug','')}  name={u.get('name','')}")
                     result.add(
                         "HIGH", "rest-api-user-enum",
-                        f"REST API exposes {len(api_users)} user(s) without authentication",
+                        f"REST API exposes {len(parsed)} user(s) without authentication",
                         f"{wp.site_url}/wp-json/wp/v2/users"
                     )
-                except _json.JSONDecodeError:
-                    info("REST API returned non-JSON — likely blocked")
-                    ok("REST API user enumeration blocked")
-            elif api_body and ("401" in api_body or "403" in api_body or "rest_forbidden" in api_body):
-                ok("REST API user endpoint requires authentication (blocked)")
-            else:
-                ok("REST API user enumeration not accessible")
+                else:
+                    ok("REST API user endpoint requires authentication (blocked)")
         else:
             info("--site-url not provided — skipping REST API enumeration check")
 

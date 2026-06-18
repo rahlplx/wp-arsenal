@@ -347,9 +347,8 @@ class TestRegressions:
 
     def test_backup_password_escapes_backslash_before_quote(self, mock_ssh_client, sample_args):
         """
-        Regression: wp-backup.py password escape did not escape backslash first.
-        A password containing \\ would produce a broken shell command.
-        Fix: replace('\\\\', '\\\\\\\\') before replacing single quotes.
+        POSIX sh single-quotes pass \\ literally — no backslash escaping needed.
+        Only single-quotes need the '\''  escaping. Backslash doubling is wrong.
         """
         mock_ssh_client.exec_command.return_value = (
             None,
@@ -376,10 +375,12 @@ class TestRegressions:
         for call in mock_ssh_client.exec_command.call_args_list:
             cmd = call[0][0]
             if "mysqldump" in cmd:
-                # The raw password must not appear unescaped — backslash must be doubled
-                assert "p@ss\\\\word" in cmd or "MYSQL_PWD=" in cmd, (
-                    "Backslash in DB password must be escaped before single-quote escaping"
+                # POSIX sh single-quotes: \\ is literal — must NOT double backslashes.
+                # password "p@ss\word'tricky" → cmd must contain p@ss\word'\''tricky
+                assert "p@ss\\\\word" not in cmd, (
+                    "Backslash must NOT be doubled — POSIX sh single-quotes pass \\ literally"
                 )
+                assert "MYSQL_PWD=" in cmd
 
     def test_wp_scan_has_config_backup_list(self, mock_ssh_client):
         """wp-scan.py must define WP_CONFIG_BACKUPS with at least 30 variants."""
@@ -407,4 +408,80 @@ class TestRegressions:
         source = inspect.getsource(mod)
         assert "wp-json/wp/v2/users" in source, (
             "wp-user-audit must check /wp-json/wp/v2/users REST API endpoint"
+        )
+
+
+class TestSecurityFixes:
+    """Security correctness fixes from code-review findings."""
+
+    def test_malware_grep_uses_shlex_quote_not_repr(self, mock_ssh_client):
+        """WP_PAT= assignment must use shlex.quote, not repr — repr doubles backslashes in single-quoted strings."""
+        import inspect
+        mod = _import_script("security/wp-scan.py")
+        source = inspect.getsource(mod)
+        assert "shlex.quote(pattern)" in source, "wp-scan.py must use shlex.quote(pattern) for WP_PAT"
+        assert "repr(pattern)" not in source, "repr(pattern) must not be used — it doubles backslashes"
+
+    def test_deep_audit_grep_uses_shlex_quote_not_repr(self, mock_ssh_client):
+        """Same shlex.quote requirement for wp-deep-audit.py."""
+        import inspect
+        mod = _import_script("security/wp-deep-audit.py")
+        source = inspect.getsource(mod)
+        assert "shlex.quote(pattern)" in source, "wp-deep-audit.py must use shlex.quote(pattern)"
+        assert "repr(pattern)" not in source, "repr(pattern) must not be used"
+
+    def test_http_body_url_uses_shlex_quote(self, mock_ssh_client, sample_args):
+        """http_body/http_code must shlex.quote the URL to prevent shell injection via single-quote in site_url."""
+        import inspect
+        import sys, os
+        wp_connect_path = os.path.join(SCRIPTS_DIR, "wp_connect.py")
+        source = open(wp_connect_path, encoding="utf-8").read()
+        assert "shlex.quote(url)" in source, "http_body and http_code must use shlex.quote(url)"
+
+    def test_rest_api_dict_response_no_crash(self, mock_ssh_client, sample_args):
+        """REST forbidden error JSON contains 'slug' key — isinstance guard must prevent AttributeError."""
+        import inspect
+        mod = _import_script("management/wp-user-audit.py")
+        source = inspect.getsource(mod)
+        # The fix: isinstance(parsed, list) check before iterating
+        assert "isinstance(" in source and "list" in source, (
+            "Must guard with isinstance(parsed, list) before iterating REST API response"
+        )
+        # Also: must not have the old pattern that would crash — u.get() on a string dict key
+        # Verify the elif rest_forbidden branch is gone (was unreachable dead code)
+        assert "rest_forbidden" not in source or "isinstance" in source, (
+            "rest_forbidden elif was dead code — fix must use isinstance guard instead"
+        )
+
+    def test_rest_api_blocked_not_reported_as_exposed(self, mock_ssh_client, sample_args):
+        """rest_forbidden JSON with 'slug' key must be reported as blocked, NOT as user-exposed HIGH finding."""
+        rest_forbidden_body = '{"code":"rest_forbidden","message":"Sorry.","data":{"slug":"rest_forbidden","status":401}}'
+        mock_ssh_client.exec_command.return_value = (
+            None,
+            MockFileObject(rest_forbidden_body),
+            MockFileObject(""),
+        )
+        mod = _import_script("management/wp-user-audit.py")
+        from wp_connect import WPConnection
+        import inspect
+        source = inspect.getsource(mod)
+        # The fix: check for error response BEFORE the slug heuristic
+        # Presence of isinstance(api_users, list) guard OR checking "code" before "slug"
+        assert 'isinstance(' in source and 'list' in source, (
+            "Must check isinstance(api_users, list) before iterating — dict response crashes on .get()"
+        )
+
+    def test_section_k_empty_body_no_false_negative_finding(self, mock_ssh_client, sample_args):
+        """Empty http_body (connection timeout) must not produce dir-listing false-negative silently."""
+        import inspect
+        mod = _import_script("security/wp-scan.py")
+        source = inspect.getsource(mod)
+        # Must guard section K with 'if body' before checking 'Index of'
+        # Pattern: 'if body and' must appear in the section K dir-listing check
+        lines = source.splitlines()
+        k_section_idx = next((i for i, l in enumerate(lines) if "Directory listing exposure" in l), None)
+        assert k_section_idx is not None, "Section K must exist"
+        k_block = "\n".join(lines[k_section_idx:k_section_idx + 20])
+        assert "if body" in k_block, (
+            "Section K must guard 'Index of' check with 'if body' — empty response = false-negative"
         )

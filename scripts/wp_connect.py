@@ -14,6 +14,7 @@ Provides:
 """
 
 import argparse
+import shlex
 import sys
 import time
 import socket
@@ -288,12 +289,12 @@ class WPConnection:
     # ── HTTP probe helper ──────────────────────────────────────────────────
     def http_code(self, url: str, timeout: int = 20) -> str:
         """Return HTTP status code string for a URL (e.g. '200', '403')."""
-        cmd = f"curl -sk -o /dev/null -w '%{{http_code}}' --max-time {timeout} '{url}' 2>/dev/null"
+        cmd = f"curl -sk -o /dev/null -w '%{{http_code}}' --max-time {timeout} {shlex.quote(url)} 2>/dev/null"
         return self.ssh(cmd, timeout + 5)
 
     def http_body(self, url: str, timeout: int = 25) -> str:
         """Return HTTP response body for a URL."""
-        cmd = f"curl -sk --max-time {timeout} '{url}' 2>/dev/null"
+        cmd = f"curl -sk --max-time {timeout} {shlex.quote(url)} 2>/dev/null"
         return self.ssh(cmd, timeout + 5)
 
     # ── WordPress path helpers ─────────────────────────────────────────────

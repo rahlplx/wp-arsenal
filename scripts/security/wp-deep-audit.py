@@ -17,6 +17,7 @@ Usage:
 
 import argparse
 import json
+import shlex
 import sys
 import os
 from datetime import datetime
@@ -105,7 +106,7 @@ def domain_b_malware(wp: WPConnection, r: AuditResult) -> None:
     section("DOMAIN B — Malware Signatures")
     for name, pattern in SIGNATURES:
         hits = wp.ssh(
-            f"WP_PAT={repr(pattern)} grep -rl --include='*.php' -E \"$WP_PAT\" "
+            f"WP_PAT={shlex.quote(pattern)} grep -rl --include='*.php' -E \"$WP_PAT\" "
             f"'{wp.wp_path}' 2>/dev/null | grep -v '/node_modules/' | head -5"
         )
         if hits.strip():
