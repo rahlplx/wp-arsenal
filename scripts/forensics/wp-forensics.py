@@ -24,6 +24,7 @@ Usage:
 
 import argparse
 import json
+import shlex
 import sys
 import os
 import stat
@@ -54,7 +55,8 @@ def collect_evidence(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     # ── Setup ──────────────────────────────────────────────────────────
     section("1. Setup evidence directory")
     wp.ssh(f"mkdir -p '{evidence_dir}/malware' '{evidence_dir}/logs' "
-           f"'{evidence_dir}/config' '{evidence_dir}/db'")
+           f"'{evidence_dir}/config' '{evidence_dir}/db'"
+           f" && chmod 700 '{evidence_dir}'")
     ok(f"Evidence dir: {evidence_dir}")
 
     # ── 2. Collect malware files ───────────────────────────────────────
@@ -62,7 +64,7 @@ def collect_evidence(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     malware_found = 0
     for pattern in MALWARE_PATTERNS:
         hits = wp.ssh(
-            f"grep -rl --include='*.php' -E '{pattern}' '{wp.wp_path}' 2>/dev/null | "
+            f"WP_PAT={shlex.quote(pattern)} grep -rl --include='*.php' -E \"$WP_PAT\" '{wp.wp_path}' 2>/dev/null | "
             f"grep -v '/node_modules/' | head -20"
         )
         for path in [p.strip() for p in hits.splitlines() if p.strip()]:
@@ -168,6 +170,7 @@ def collect_evidence(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     section("8. Create evidence archive")
     archive = wp.ssh(
         f"tar -czf '{archive_path}' -C /tmp 'wp-evidence-{ts}/' "
+        f"&& chmod 600 '{archive_path}'"
         f"&& echo OK || echo FAIL"
     )
     if "OK" in archive:

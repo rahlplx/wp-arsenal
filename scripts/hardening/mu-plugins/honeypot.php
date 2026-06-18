@@ -33,12 +33,12 @@ if ( ! defined( 'WP_ARSENAL_HONEYPOT_SECRET' ) || WP_ARSENAL_HONEYPOT_SECRET ===
 
 // ── Trap endpoint ─────────────────────────────────────────────────────────
 add_action( 'init', function() {
-    if (
-        isset( $_GET['_wpa_hp'] )
-        && hash_equals( WP_ARSENAL_HONEYPOT_SECRET, $_GET['_wpa_hp'] )
-    ) {
-        _wp_arsenal_honeypot_triggered();
-        exit;
+    if ( isset( $_GET['_wpa_hp'] ) ) {
+        $expected = hash_hmac( 'sha256', (string) floor( time() / 3600 ), WP_ARSENAL_HONEYPOT_SECRET );
+        if ( hash_equals( $expected, $_GET['_wpa_hp'] ) ) {
+            _wp_arsenal_honeypot_triggered();
+            exit;
+        }
     }
 } );
 
@@ -106,7 +106,8 @@ function _wp_arsenal_honeypot_triggered(): void {
 
 // ── Footer injection — hidden trap link + JS fingerprinter ────────────────
 add_action( 'wp_footer', function() {
-    $trap = esc_url( add_query_arg( '_wpa_hp', WP_ARSENAL_HONEYPOT_SECRET, home_url( '/' ) ) );
+    $token = hash_hmac( 'sha256', (string) floor( time() / 3600 ), WP_ARSENAL_HONEYPOT_SECRET );
+    $trap = esc_url( add_query_arg( '_wpa_hp', $token, home_url( '/' ) ) );
     echo "\n";
     // Hidden link only automated tools follow
     echo '<a href="' . $trap . '" style="display:none;visibility:hidden;'
@@ -119,7 +120,7 @@ add_action( 'wp_footer', function() {
     <script>
     (function() {
         if ( ! /wp-login|wp-admin/.test( window.location.href ) ) return;
-        var trap = <?php echo json_encode( add_query_arg( '_wpa_hp', WP_ARSENAL_HONEYPOT_SECRET, home_url( '/' ) ) ); ?>;
+        var trap = <?php echo json_encode( add_query_arg( '_wpa_hp', $token, home_url( '/' ) ) ); ?>;
         var fp = { ua: navigator.userAgent.substr(0, 100) };
         fp.tz  = Intl.DateTimeFormat().resolvedOptions().timeZone;
         fp.lang = navigator.language;
@@ -151,6 +152,7 @@ add_action( 'wp_footer', function() {
 
 // ── Shortcode [wp_arsenal_honeypot] for manual placement ─────────────────
 add_shortcode( 'wp_arsenal_honeypot', function() {
-    $trap = esc_url( add_query_arg( '_wpa_hp', WP_ARSENAL_HONEYPOT_SECRET, home_url( '/' ) ) );
+    $token = hash_hmac( 'sha256', (string) floor( time() / 3600 ), WP_ARSENAL_HONEYPOT_SECRET );
+    $trap = esc_url( add_query_arg( '_wpa_hp', $token, home_url( '/' ) ) );
     return '<a href="' . $trap . '" style="display:none" tabindex="-1" aria-hidden="true"></a>';
 } );

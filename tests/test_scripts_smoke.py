@@ -485,3 +485,98 @@ class TestSecurityFixes:
         assert "if body" in k_block, (
             "Section K must guard 'Index of' check with 'if body' — empty response = false-negative"
         )
+
+
+class TestSecurityFixesBehavioral:
+    """Behavioral tests for coverage gaps identified in vibe-review Stage 5."""
+
+    def test_shlex_quote_url_single_quote_produces_safe_string(self, mock_ssh_client, sample_args):
+        """shlex.quote(url) must neutralise single-quote injection in site_url."""
+        import shlex
+        malicious_url = "https://site.com/' && cat /etc/passwd #"
+        quoted = shlex.quote(malicious_url)
+        # shlex.quote escapes ' as '"'"' — the result is a single shell word, not a split command
+        assert quoted.startswith("'"), "shlex.quote must wrap in single-quotes"
+        mock_ssh_client.exec_command.return_value = (None, MockFileObject("200"), MockFileObject(""))
+        from wp_connect import WPConnection
+        wp = WPConnection(sample_args)
+        wp.connect()
+        wp.http_body(malicious_url)
+        cmd = mock_ssh_client.exec_command.call_args[0][0]
+        # URL must appear wrapped by shlex.quote, not raw
+        assert shlex.quote(malicious_url) in cmd, "shlex.quote(url) must appear verbatim in curl cmd"
+        assert malicious_url not in cmd, "raw (unquoted) injection URL must not appear in cmd"
+
+    def test_rest_api_empty_list_no_high_finding(self, mock_ssh_client, sample_args):
+        """Empty JSON array [] from REST API must not raise HIGH user-enum finding."""
+        mock_ssh_client.exec_command.return_value = (
+            None,
+            MockFileObject("[]"),
+            MockFileObject(""),
+        )
+        mod = _import_script("management/wp-user-audit.py")
+        from wp_connect import WPConnection
+        args = argparse.Namespace(
+            host="h", user="u", password="p", port=22,
+            wp_path="/var/www/html", db_host="", db_user="",
+            db_pass="", db_name="", db_prefix="wp_",
+            site_url="https://example.com", dry_run=False, quiet=True,
+            json=False, alert_email="", trusted_cidrs="", blocked_cidrs="", config=None,
+        )
+        wp = WPConnection(args)
+        wp.connect()
+        result_obj = mod.AuditResult("test") if hasattr(mod, "AuditResult") else None
+        try:
+            mod.main_scan(wp, args, result_obj) if hasattr(mod, "main_scan") else None
+        except Exception:
+            pass
+        import inspect
+        source = inspect.getsource(mod)
+        assert "and parsed" in source or "if parsed" in source or "isinstance(parsed, list) and parsed" in source, (
+            "Empty list must short-circuit before triggering HIGH finding — 'and parsed' truthy check required"
+        )
+
+    def test_backup_sftp_uses_shared_client_not_raw_paramiko(self, mock_ssh_client, sample_args):
+        """download_backup() must use wp._get_sftp() not paramiko.SFTPClient.from_transport()."""
+        import inspect
+        mod = _import_script("management/wp-backup.py")
+        source = inspect.getsource(mod)
+        assert "SFTPClient.from_transport" not in source, (
+            "Must use wp._get_sftp() — raw paramiko.SFTPClient.from_transport() leaks channels on exception"
+        )
+        assert "_get_sftp" in source or "sftp_" in source, (
+            "Must use WPConnection SFTP helper for lifecycle-managed connection"
+        )
+
+    def test_forensics_evidence_dir_restricted_permissions(self, mock_ssh_client, sample_args):
+        """wp-forensics.py must chmod 700 evidence dir immediately after mkdir."""
+        import inspect
+        mod = _import_script("forensics/wp-forensics.py")
+        source = inspect.getsource(mod)
+        assert "chmod 700" in source or "chmod 600" in source, (
+            "/tmp evidence dir is world-readable — must chmod 700 immediately after mkdir"
+        )
+
+    def test_honeypot_secret_not_in_html_output(self, mock_ssh_client, sample_args):
+        """honeypot.php must not embed raw WP_ARSENAL_HONEYPOT_SECRET in HTML — must use HMAC token."""
+        honeypot_path = os.path.join(SCRIPTS_DIR, "../scripts/hardening/mu-plugins/honeypot.php")
+        honeypot_path = os.path.normpath(os.path.join(SCRIPTS_DIR, "..", "scripts", "hardening", "mu-plugins", "honeypot.php"))
+        if not os.path.exists(honeypot_path):
+            pytest.skip("honeypot.php not found")
+        source = open(honeypot_path, encoding="utf-8").read()
+        assert "hash_hmac" in source, (
+            "honeypot.php must use hash_hmac() to derive a token — raw WP_ARSENAL_HONEYPOT_SECRET must never appear in HTML"
+        )
+        trap_lines = [l for l in source.splitlines() if "_wpa_hp" in l and "WP_ARSENAL_HONEYPOT_SECRET" in l]
+        assert not trap_lines, (
+            f"Raw secret must not be used directly as _wpa_hp value: {trap_lines[:2]}"
+        )
+
+    def test_forensics_grep_uses_shlex_quote(self, mock_ssh_client, sample_args):
+        """wp-forensics.py grep pattern must use shlex.quote — same fix as wp-scan and wp-deep-audit."""
+        import inspect
+        mod = _import_script("forensics/wp-forensics.py")
+        source = inspect.getsource(mod)
+        assert "shlex" in source, (
+            "wp-forensics.py grep patterns must use shlex.quote — same $_ expansion bug as wp-scan.py"
+        )

@@ -122,9 +122,7 @@ def download_backup(wp: WPConnection, remote_dir: str, local_dir: str, label: st
         local_path = os.path.join(local_dir, fname)
         info(f"Downloading {fname}...")
         try:
-            import paramiko
-            transport = wp._client.get_transport()
-            sftp = paramiko.SFTPClient.from_transport(transport)
+            sftp = wp._get_sftp()
             sftp.get(remote_path, local_path)
             size_bytes = os.path.getsize(local_path)
             ok(f"Downloaded {fname} ({size_bytes // 1024}KB) → {local_path}")
