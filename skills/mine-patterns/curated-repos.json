@@ -1,0 +1,64 @@
+{
+  "repos": [
+    {
+      "repo": "fabric/fabric",
+      "license": "BSD-2-Clause",
+      "focus": ["ssh", "remote-execution", "connection-pooling"],
+      "reason": "Gold standard for SSH abstraction and remote command execution patterns"
+    },
+    {
+      "repo": "PyCQA/bandit",
+      "license": "Apache-2.0",
+      "focus": ["security", "python", "static-analysis"],
+      "reason": "Security-focused Python linter with AST-based vulnerability detection patterns"
+    },
+    {
+      "repo": "pallets/click",
+      "license": "BSD-3-Clause",
+      "focus": ["cli", "testing", "parameter-validation"],
+      "reason": "Robust CLI patterns: decorators, validation, test helpers"
+    },
+    {
+      "repo": "VirusTotal/yara",
+      "license": "Apache-2.0",
+      "focus": ["malware", "pattern-matching", "signatures"],
+      "reason": "Industry standard for malware signature definition and matching"
+    },
+    {
+      "repo": "Cisco-Talos/clamav",
+      "license": "AGPL-3.0",
+      "focus": ["malware", "signatures", "scanning"],
+      "reason": "Open-source antivirus engine with proven malware detection patterns"
+    },
+    {
+      "repo": "owasp-modsecurity/ModSecurity",
+      "license": "Apache-2.0",
+      "focus": ["waf", "wordpress", "security-rules"],
+      "reason": "Web application firewall with WordPress-specific rule patterns"
+    },
+    {
+      "repo": "squizlabs/PHP_CodeSniffer",
+      "license": "BSD-3-Clause",
+      "focus": ["php", "code-standards", "wordpress"],
+      "reason": "PHP code analysis with WordPress coding standards support"
+    },
+    {
+      "repo": "phpstan/phpstan",
+      "license": "MIT",
+      "focus": ["php", "static-analysis", "type-checking"],
+      "reason": "PHP static analysis with advanced type system patterns"
+    },
+    {
+      "repo": "pytest-dev/pytest",
+      "license": "MIT",
+      "focus": ["testing", "fixtures", "parametrize"],
+      "reason": "Python testing framework with fixture and parametrize patterns"
+    },
+    {
+      "repo": "paramiko/paramiko",
+      "license": "LGPL-2.1",
+      "focus": ["ssh", "sftp", "connection"],
+      "reason": "Python SSH library — our direct dependency for connection patterns"
+    }
+  ]
+}

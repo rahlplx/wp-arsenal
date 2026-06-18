@@ -24,7 +24,7 @@ import json
 import sys
 import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from wp_connect import (
     WPConnection, add_connection_args, print_banner, AuditResult,
     ok, warn, err, info, section
