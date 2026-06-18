@@ -146,6 +146,14 @@ class TestRestorationScripts:
         mod = _import_script("restoration/wp-elementor-fix.py")
         assert hasattr(mod, "main")
 
+    def test_wp_theme_restore_importable(self, mock_ssh_client):
+        """wp-theme-restore.py should import without errors."""
+        mod = _import_script("restoration/wp-theme-restore.py")
+        assert hasattr(mod, "main")
+        assert hasattr(mod, "audit_wp_structure")
+        assert hasattr(mod, "audit_theme_files")
+        assert hasattr(mod, "verify_web_ux")
+
 
 class TestForensicsScripts:
     """Smoke tests for forensics scripts."""
