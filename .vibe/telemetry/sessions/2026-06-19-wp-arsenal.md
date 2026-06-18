@@ -6,12 +6,24 @@
 |--------|-------|
 | Date | 2026-06-19 |
 | Project | wp-arsenal |
-| Phases | code-review → fix → harness → telemetry |
+| Phases | code-review → fix → harness → vibe-review → behavioral fix → learn |
 | Starting commit | `2087402` (vibe telemetry) |
-| Ending commit | `0ba7997` (5 security fixes) |
+| Ending commit | `a0dd809` (harness report update) |
 | Tests at start | 51 |
-| Tests at end | 57 |
-| New tests | +6 (TestSecurityFixes class, RED-first) |
+| Tests at end | 63 |
+| New tests | +12 (TestSecurityFixes + TestSecurityFixesBehavioral) |
+| Bugs fixed | 9 |
+
+---
+
+## Commit Timeline
+
+| Commit | Message | Tests |
+|--------|---------|-------|
+| `3c12564` | fix(security): 5 code-review findings (shlex, POSIX sh, isinstance, body guard) | 57 |
+| `0ba7997` | test(security): 6 behavioral RED tests for coverage gaps | 57 (5 RED) |
+| `e9497fe` | fix(security): GREEN — honeypot HMAC, SFTP lifecycle, /tmp perms, forensics grep | 63 |
+| `a0dd809` | docs(harness): updated report 63/63 all issues resolved | 63 |
 
 ---
 
@@ -30,60 +42,75 @@
 
 ---
 
-## Fixes Applied
+## Vibe-Review Additional Findings (Stage 3+4)
 
-### A: shlex.quote(pattern) — wp-scan.py + wp-deep-audit.py
-- Root: `repr(pattern)` in POSIX sh single-quoted assignment doubles every `\`
-- Effect: `\s*` → `\\s*` in WP_PAT → grep sees `\\s*` (literal backslash+s) not whitespace
-- Impact: all `\$_(POST|GET|REQUEST|COOKIE)` and `['\"]` malware signatures broken
-- Fix: `shlex.quote()` wraps in `'...'` without doubling backslashes
-
-### B: shlex.quote(url) — wp_connect.py
-- Root: URL from `--site-url` CLI arg interpolated raw inside `'...'` in curl command
-- Effect: single-quote in URL closes the shell argument early; `&&` chains arbitrary command on remote server
-- Fix: `shlex.quote(url)` handles internal single-quotes as `'\''`
-
-### C: Revert backslash doubling — wp-backup.py
-- Root: POSIX sh single-quotes pass `\` literally (no backslash special meaning inside `'...'`)
-- Effect: password `foo\bar` → cmd `MYSQL_PWD='foo\\bar'` → mysqldump receives `foo\\bar` (wrong)
-- Fix: `pass_escaped = wp.db_pass.replace("'", "'\\''")`  — no backslash replace
-
-### D: isinstance guard — wp-user-audit.py
-- Root: `'"slug"' in api_body` heuristic too broad; WP error JSON `{"data":{"slug":"..."}}` passes it
-- Effect: `_json.loads()` returns dict; `for u in dict` iterates string keys; `u.get()` → AttributeError crash
-- Fix: parse JSON first → `isinstance(parsed, list) and all(isinstance(u, dict) for u in parsed)` before loop
-- Also: removes dead `elif rest_forbidden` branch; removes duplicate `import json as _json`
-
-### E: if body guard — wp-scan.py section K
-- Root: empty `http_body()` (curl timeout) passed to `"Index of" in body` without guard
-- Effect: directory listing silently reported clean on connection failure (false-negative)
-- Fix: `if body and ("Index of" in body or "Directory listing" in body)`
+| # | Severity | Finding | Fixed |
+|---|----------|---------|-------|
+| 9 | HIGH | `honeypot.php:109` — raw WP_ARSENAL_HONEYPOT_SECRET in page HTML href + JS | Yes |
+| 10 | MEDIUM | `wp-backup.py:127` — SFTPClient.from_transport() channel leak in loop | Yes |
+| 11 | MEDIUM | `wp-forensics.py:51` — /tmp archive world-readable (no chmod) | Yes |
+| 12 | BONUS | `wp-forensics.py:64` — grep pattern unquoted (same bug as scan/audit, missed first pass) | Yes |
 
 ---
 
-## Harness Results (2026-06-19)
+## Grill-Me Debate Findings (not blocking, flagged for follow-up)
 
-| Check | Result |
+| # | Persona | Issue | Priority |
+|---|---------|-------|----------|
+| G1 | PHP-GRUMPY | `$_GET['_wpa_hp']` should be cast to string before hash_equals | LOW |
+| G2 | TDD-DRILL | _get_sftp() needs behavioral call-count test, not source inspection | LOW |
+| G3 | DEV | `_get_sftp()` should be renamed `get_sftp()` (public API) | LOW |
+| G4 | DEV | `--evidence-dir` arg for wp-forensics.py to avoid /tmp | ENHANCEMENT |
+| G5 | ATTACKER | `operator-config-trust-boundary` rule needed for future external input | RULE |
+
+---
+
+## Harness Results — Final (2026-06-19)
+
+| Check | Status |
 |-------|--------|
-| 1. Credential leak | ✅ PASS |
-| 2. Shell injection | ✅ PASS (13 operator-config ssh() calls — trusted) |
-| 3. mysqldump credential | ✅ PASS |
-| 4. SQL input validation | ✅ PASS (false positive resolved) |
-| 5. Error handling | ✅ PASS |
-| 6. DB access controls | ✅ PASS |
-| .vibe credential-exposure | ✅ PASS |
-| .vibe importlib | ✅ PASS |
-| .vibe grep-dollar-expansion | ✅ PASS |
-| .vibe WP_PAT shlex | ✅ PASS |
+| `check-credential-exposure.sh` | ✅ PASS |
+| `check-test-importlib.sh` | ✅ PASS |
+| `check-grep-dollar-expansion.sh` | ✅ PASS |
+| `check-ssh-fstring-injection.sh` | ✅ PASS (13 operator-config fp) |
+| `check-secret-in-html.sh` | NEW (not yet run) |
+| `check-sftp-from-transport.sh` | NEW (not yet run) |
+| Code review: cred leak | ✅ PASS |
+| Code review: shell injection | ✅ PASS |
+| Code review: mysqldump | ✅ PASS |
+| Code review: SQL validation | ✅ PASS |
+| Code review: error handling | ✅ PASS |
+| Code review: DB access | ✅ PASS |
 
-**10/10 PASS**
+---
+
+## Vibe-Learn Output (2026-06-19)
+
+### New anti-patterns
+- `secret-in-html-output.md` — raw PHP constants in echo/add_query_arg
+- `sftp-channel-leak.md` — SFTPClient.from_transport() bypass
+- `world-readable-tmp.md` — /tmp without chmod
+
+### New patterns
+- `hmac-derived-token.md` — HMAC for safe secret-derived tokens
+- `lifecycle-managed-sftp.md` — _get_sftp() shared client
+
+### New rules (evolution.json v1.4)
+- `secret-derivation-for-output` (harness: check-secret-in-html.sh)
+- `resource-lifecycle-management` (harness: check-sftp-from-transport.sh)
+- `tmp-file-permissions`
+- `operator-config-trust-boundary`
+
+### New harness checks
+- `check-secret-in-html.sh`
+- `check-sftp-from-transport.sh`
 
 ---
 
 ## Key Learnings
 
-1. **repr() ≠ shell-safe** — `repr(s)` wraps in Python quotes AND doubles backslashes. For POSIX sh: use `shlex.quote()` which gives `'...'` with `'\''` for internal single-quotes, no backslash mangling.
-2. **POSIX sh single-quotes are fully literal** — inside `'...'`, backslash has NO special meaning. `'foo\bar'` → exactly `foo\bar`. Never double backslashes before putting value in single-quoted assignment.
-3. **API response type ≠ assumed** — even when a heuristic string check passes, the JSON shape may differ from expected. Always `isinstance(parsed, list)` before iterating a parsed HTTP response.
-4. **Heuristic detection order matters** — checking `'"slug"' in body` before `"rest_forbidden" in body` created an unreachable branch. Check for error patterns BEFORE checking for data patterns.
-5. **Empty-string guards in body checks** — `if body and "pattern" in body` vs `if "pattern" in body`: the latter returns `False` on empty string (no crash) but silently skips the check. Make the guard explicit with `if body` to distinguish "found nothing" from "couldn't check".
+1. **vibe-review catches what code-review misses** — code-review is diff-level (7 of 8 in changed code), vibe-review is system-level (honeypot secret, SFTP leak, /tmp — all in code not changed by prior commits). Run both.
+2. **Harness coverage ≠ codebase coverage** — `check-grep-dollar-expansion.sh` was written after fixing scan+audit but didn't scan forensics. The forensics grep bug survived one full session before vibe-review found it. Harness scripts must scan ALL scripts/, not just the ones fixed this session.
+3. **Behavioral tests > source inspection** — 4 of 6 new tests are source inspection (string in source). Only 2 are behavioral. Source inspection tests break on rename; behavioral tests survive refactoring. Prefer behavioral.
+4. **PowerShell heredoc is `@'...'@`** — git commit -m with multiline in PowerShell always use `@'...'@`. Bash `$(cat <<'EOF'...EOF)` does not work.
+5. **shlex.quote behavioral assertion** — test the semantic guarantee (url appears quoted in cmd, raw url does not), not the escape sequence character-by-character.

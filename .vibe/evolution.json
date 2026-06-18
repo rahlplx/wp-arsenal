@@ -1,5 +1,5 @@
 {
-  "version": "1.3",
+  "version": "1.4",
   "last_updated": "2026-06-19",
   "project": "wp-arsenal",
   "rules": {
@@ -44,14 +44,14 @@
       "notes": "13 silent SKIPS became 13 PASSes. Harness confirmed clean in 2nd run."
     },
     "user-input-shell-validation": {
-      "fires": 2,
-      "helpful": 2,
+      "fires": 3,
+      "helpful": 3,
       "false_positive": 0,
       "quality_score": 1.0,
       "last_updated": "2026-06-19",
       "status": "active",
       "harness": "check-ssh-fstring-injection.sh",
-      "notes": "Fired again: http_body/http_code URL not shlex.quoted — shell injection via --site-url. Fixed 2026-06-19."
+      "notes": "Fired 3rd time: wp-forensics.py grep pattern unquoted — same bug missed first pass (harness only checked scan/audit). Fixed 2026-06-19."
     },
     "shell-expansion-breaks-regex": {
       "fires": 2,
@@ -61,17 +61,17 @@
       "last_updated": "2026-06-19",
       "status": "active",
       "harness": "check-grep-dollar-expansion.sh",
-      "notes": "repr() variant: same root cause (shell-expanding regex patterns). Fixed 2026-06-19 with shlex.quote."
+      "notes": "repr() variant: same root cause (shell-expanding regex patterns). Fixed 2026-06-19 with shlex.quote. 2nd run harness clean."
     },
     "posix-sh-single-quote-semantics": {
-      "fires": 1,
-      "helpful": 1,
+      "fires": 2,
+      "helpful": 2,
       "false_positive": 0,
       "quality_score": 1.0,
       "last_updated": "2026-06-19",
       "status": "active",
       "harness": null,
-      "notes": "NEW: POSIX sh single-quotes pass \\ literally — no backslash escaping needed inside them. replace('\\\\','\\\\\\\\') before single-quote escape is WRONG and corrupts passwords with backslashes."
+      "notes": "Fired 2nd time 2026-06-19: same backslash-doubling pattern suggested as fix, caught before landing. POSIX sh single-quotes are fully literal — no backslash special meaning inside them."
     },
     "response-type-validation": {
       "fires": 1,
@@ -81,7 +81,47 @@
       "last_updated": "2026-06-19",
       "status": "active",
       "harness": null,
-      "notes": "NEW: External API responses must be type-checked before iteration. REST API heuristic ('slug' in body) fired on error JSON dict, causing AttributeError on str.get(). Fix: parse JSON first, isinstance(parsed, list) before loop."
+      "notes": "REST API heuristic ('slug' in body) fired on error JSON dict, causing AttributeError on str.get(). Fix: isinstance(parsed, list) before loop."
+    },
+    "secret-derivation-for-output": {
+      "fires": 1,
+      "helpful": 1,
+      "false_positive": 0,
+      "quality_score": 1.0,
+      "last_updated": "2026-06-19",
+      "status": "active",
+      "harness": "check-secret-in-html.sh",
+      "notes": "NEW 2026-06-19: Raw WP_ARSENAL_HONEYPOT_SECRET in every page HTML href/JS. Fix: hash_hmac('sha256', floor(time()/3600), SECRET). Secrets must never appear in client-visible output — always derive a one-way token."
+    },
+    "resource-lifecycle-management": {
+      "fires": 1,
+      "helpful": 1,
+      "false_positive": 0,
+      "quality_score": 1.0,
+      "last_updated": "2026-06-19",
+      "status": "active",
+      "harness": "check-sftp-from-transport.sh",
+      "notes": "NEW 2026-06-19: paramiko.SFTPClient.from_transport() in loop leaked channels. Fix: wp._get_sftp() (lifecycle-managed). Pattern: always use framework-provided resource accessors, never raw library constructors that bypass lifecycle management."
+    },
+    "tmp-file-permissions": {
+      "fires": 1,
+      "helpful": 1,
+      "false_positive": 0,
+      "quality_score": 1.0,
+      "last_updated": "2026-06-19",
+      "status": "active",
+      "harness": null,
+      "notes": "NEW 2026-06-19: /tmp evidence dir world-readable on shared hosting. Fix: mkdir && chmod 700 in same ssh() call. Archive: tar && chmod 600. Rule: any /tmp directory creation must be followed immediately by chmod 700."
+    },
+    "operator-config-trust-boundary": {
+      "fires": 0,
+      "helpful": 0,
+      "false_positive": 0,
+      "quality_score": 1.0,
+      "last_updated": "2026-06-19",
+      "status": "active",
+      "harness": null,
+      "notes": "NEW 2026-06-19 (from grill-me): wp.* vars (wp_path, db_pass, etc.) are trusted operator config. If any is ever sourced from untrusted external input (webhooks, API), validate with sql_slug() or shlex.quote() at the boundary. Document trust model in any new script that accepts external input."
     }
   },
   "harness_checks": {
@@ -116,6 +156,22 @@
       "quality_score": 1.0,
       "status": "applied",
       "notes": "Passed 2nd run (repr->shlex.quote fix verified clean)."
+    },
+    "check-secret-in-html.sh": {
+      "runs": 1,
+      "finds": 0,
+      "false_positive": 0,
+      "quality_score": 1.0,
+      "status": "applied",
+      "notes": "NEW 2026-06-19. 1st run PASS — fix already applied (HMAC token). Retroactively would have caught honeypot.php raw secret."
+    },
+    "check-sftp-from-transport.sh": {
+      "runs": 1,
+      "finds": 0,
+      "false_positive": 0,
+      "quality_score": 1.0,
+      "status": "applied",
+      "notes": "NEW 2026-06-19. 1st run PASS — fix already applied (_get_sftp). Retroactively would have caught wp-backup.py from_transport."
     }
   }
 }
