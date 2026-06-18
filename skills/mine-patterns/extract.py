@@ -180,7 +180,6 @@ def extract_patterns_from_php(code: str, source_file: str) -> List[Pattern]:
                 tags=["wordpress", "hook", hook_type],
             ))
 
-    for i, line in enumerate(lines, 1):
         if re.search(r"(__DIR__|ABSPATH).*config", line, re.IGNORECASE):
             patterns.append(Pattern(
                 name="config-loading",
@@ -196,7 +195,6 @@ def extract_patterns_from_php(code: str, source_file: str) -> List[Pattern]:
                 tags=["config", "loading"],
             ))
 
-    for i, line in enumerate(lines, 1):
         cap_match = re.search(r"current_user_can\s*\(\s*['\"]([^'\"]+)['\"]", line)
         if cap_match:
             capability = cap_match.group(1)
@@ -302,7 +300,11 @@ def extract_patterns_from_tests(code: str, source_file: str) -> List[Pattern]:
             ))
 
         elif isinstance(node, ast.FunctionDef):
+            extracted = False
             for decorator in node.decorator_list:
+                if extracted:
+                    break
+
                 dec_name = ""
                 if isinstance(decorator, ast.Name):
                     dec_name = decorator.id
@@ -334,6 +336,7 @@ def extract_patterns_from_tests(code: str, source_file: str) -> List[Pattern]:
                         description=docstring,
                         tags=["test", "fixture"],
                     ))
+                    extracted = True
 
                 elif dec_name == "parametrize":
                     start = decorator.lineno
@@ -353,6 +356,7 @@ def extract_patterns_from_tests(code: str, source_file: str) -> List[Pattern]:
                         description=f"Parametrized test: {node.name}",
                         tags=["test", "parametrize"],
                     ))
+                    extracted = True
 
     return patterns
 

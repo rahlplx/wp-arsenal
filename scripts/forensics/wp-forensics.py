@@ -54,7 +54,7 @@ def collect_evidence(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     malware_found = 0
     for _name, pattern in MALWARE_PATTERNS:
         hits = wp.ssh(
-            f"grep -rl --include='*.php' -E '{pattern}' '{wp.wp_path}' 2>/dev/null | "
+            f"WP_PAT={repr(pattern)} grep -rl --include='*.php' -E \"$WP_PAT\" '{wp.wp_path}' 2>/dev/null | "
             f"grep -v '/node_modules/' | head -20"
         )
         for path in [p.strip() for p in hits.splitlines() if p.strip()]:

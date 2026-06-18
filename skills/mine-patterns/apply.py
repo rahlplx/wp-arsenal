@@ -22,6 +22,7 @@ def suggest_applications(
     - confidence: pattern confidence score
     """
     suggestions = []
+    project_files = _load_project_files(project_dir) if okf_patterns else []
 
     for okf in okf_patterns:
         pattern = okf.get("pattern", {})
@@ -32,7 +33,10 @@ def suggest_applications(
 
         target_file = _suggest_target_file(language, tags, project_dir)
 
-        already_present = _check_code_exists(code, project_dir)
+        already_present = False
+        if code and len(code.strip()) >= 10:
+            normalized = " ".join(code.split())
+            already_present = any(normalized in f for f in project_files)
 
         suggestions.append({
             "id": okf.get("id", "unknown"),
@@ -59,13 +63,9 @@ def _suggest_target_file(language: str, tags: List[str], project_dir: str) -> st
     return os.path.join(project_dir, "src/")
 
 
-def _check_code_exists(code: str, project_dir: str) -> bool:
-    """Check if the given code snippet already exists in the project."""
-    if not code or len(code.strip()) < 10:
-        return False
-
-    normalized = " ".join(code.split())
-
+def _load_project_files(project_dir: str) -> List[str]:
+    """Load and normalize all source files in the project once."""
+    normalized_files = []
     for root, _dirs, files in os.walk(project_dir):
         if any(part.startswith(".") or part in ("node_modules", "__pycache__", "vendor") for part in root.split(os.sep)):
             continue
@@ -78,10 +78,8 @@ def _check_code_exists(code: str, project_dir: str) -> bool:
             try:
                 with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
                     content = f.read()
-                    file_normalized = " ".join(content.split())
-                    if normalized in file_normalized:
-                        return True
+                    normalized_files.append(" ".join(content.split()))
             except (OSError, UnicodeDecodeError):
                 continue
 
-    return False
+    return normalized_files
