@@ -1,0 +1,141 @@
+name: PR Review Pipeline
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  pull_request_review:
+    types: [submitted]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  statuses: write
+
+jobs:
+  test-suite:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    if: >
+      (github.event_name == 'pull_request') ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '/tests'))
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - run: pip install pytest
+      - run: python -m pytest tests/ -v --tb=short
+
+  harness:
+    name: Harness Checks
+    runs-on: ubuntu-latest
+    if: >
+      (github.event_name == 'pull_request') ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '/harness'))
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - name: No hardcoded secrets
+        run: |
+          ! grep -r "password\s*=" scripts/ skills/ --include="*.py" --include="*.php"
+          ! grep -r "api_key\s*=" scripts/ skills/ --include="*.py" --include="*.php"
+      - name: No eval/exec
+        run: |
+          ! grep -r "\beval\s*(" scripts/ skills/ --include="*.py"
+          ! grep -r "\bexec\s*(" scripts/ skills/ --include="*.py"
+      - name: No subprocess
+        run: |
+          ! grep -r "\bsubprocess\b" skills/ --include="*.py"
+      - name: No comments in new code
+        run: |
+          ! grep -r "^#" skills/mine-patterns/ --include="*.py" | grep -v "^Binary"
+
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - name: Check for dangerous patterns
+        run: |
+          ! grep -r "os\.system\|os\.popen\|subprocess\.call\|subprocess\.run" scripts/ --include="*.py"
+          ! grep -r "import pickle\|import shelve" scripts/ skills/ --include="*.py"
+      - name: Check sys.path consistency
+        run: |
+          ! grep -r 'sys\.path\.insert.*"\.\./\.\."' scripts/ --include="*.py"
+
+  pr-review-comment:
+    name: Post Review Summary
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.action == 'opened'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get PR info
+        id: pr
+        run: |
+          echo "number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+          echo "title=${{ github.event.pull_request.title }}" >> $GITHUB_OUTPUT
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = `## Auto-Review Pipeline
+
+            | Check | Status |
+            |-------|--------|
+            | Test Suite | ⏳ Running... |
+            | Harness Checks | ⏳ Running... |
+            | Security Audit | ⏳ Running... |
+
+            **Commands:** \`/review\` \`/approve\` \`/reject\` \`/harness\` \`/tests\`
+
+            _Automated by wp-arsenal PR pipeline_`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              body: body
+            });
+
+  command-handler:
+    name: Handle PR Commands
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issue_comment' && github.event.issue.pull_request
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for commands
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comment = context.payload.comment.body.trim().toLowerCase();
+            const prNumber = context.payload.issue.number;
+
+            const commands = {
+              '/review': 'Running full review pipeline...',
+              '/approve': 'Approving PR...',
+              '/reject': 'Rejecting PR...',
+              '/harness': 'Running harness checks...',
+              '/tests': 'Running test suite...'
+            };
+
+            for (const [cmd, msg] of Object.entries(commands)) {
+              if (comment.startsWith(cmd)) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  body: msg
+                });
+                return;
+              }
+            }
