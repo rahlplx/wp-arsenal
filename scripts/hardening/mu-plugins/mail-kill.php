@@ -12,7 +12,7 @@
 defined( 'ABSPATH' ) || exit;
 
 // Load config if not already loaded
-$_wp_arsenal_config = ABSPATH . '../mu-plugins/wp-arsenal-config.php';
+$_wp_arsenal_config = __DIR__ . '/wp-arsenal-config.php';
 if ( file_exists( $_wp_arsenal_config ) ) {
     require_once $_wp_arsenal_config;
 }

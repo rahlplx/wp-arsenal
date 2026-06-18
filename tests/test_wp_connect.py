@@ -16,6 +16,37 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../scripts"))
 from wp_connect import WPConnection
 
 
+class TestSshErrorPropagation:
+    """Test that SSH exceptions propagate to callers (not swallowed)."""
+
+    def test_ssh_propagates_paramiko_exception(self, mock_ssh_client, sample_args):
+        """ssh() should let paramiko.SSHException propagate to caller."""
+        import paramiko
+        mock_ssh_client.exec_command.side_effect = paramiko.SSHException("channel closed")
+        wp = WPConnection(sample_args)
+        wp.connect()
+        with pytest.raises(paramiko.SSHException, match="channel closed"):
+            wp.ssh("whoami")
+
+    def test_ssh2_propagates_paramiko_exception(self, mock_ssh_client, sample_args):
+        """ssh2() should let paramiko.SSHException propagate to caller."""
+        import paramiko
+        mock_ssh_client.exec_command.side_effect = paramiko.SSHException("timeout")
+        wp = WPConnection(sample_args)
+        wp.connect()
+        with pytest.raises(paramiko.SSHException, match="timeout"):
+            wp.ssh2("whoami")
+
+    def test_ssh_propagates_socket_timeout(self, mock_ssh_client, sample_args):
+        """ssh() should let socket.timeout propagate to caller."""
+        import socket
+        mock_ssh_client.exec_command.side_effect = socket.timeout("timed out")
+        wp = WPConnection(sample_args)
+        wp.connect()
+        with pytest.raises(socket.timeout):
+            wp.ssh("long-running-command")
+
+
 class TestSqlEscape:
     """Test WPConnection.sql_escape() for safe SQL literal interpolation."""
 

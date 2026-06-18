@@ -22,26 +22,7 @@ from wp_connect import (
     WPConnection, add_connection_args, print_banner, AuditResult,
     ok, warn, err, info, section, RED, GREEN, YELLOW, CYAN, BOLD
 )
-
-# ── Known attacker signatures ──────────────────────────────────────────────
-MALWARE_PATTERNS = [
-    # Shell toolkits
-    ("C99shell / R57",          r"c99shell|r57shell|FilesMan|b374k|WSO\s+Shell"),
-    ("TFM / Nyx toolkit",       r"Nyx_Fallaga|TFMshell|GhostShell|AnonymousFox"),
-    ("eval+base64",             r"eval\s*\(\s*base64_decode"),
-    ("eval+gzinflate",          r"eval\s*\(\s*gzinflate"),
-    ("eval+str_rot13",          r"eval\s*\(\s*str_rot13"),
-    ("assert execution",        r'assert\s*\(\s*\$_(POST|GET|REQUEST|COOKIE)'),
-    ("preg_replace /e flag",    r"preg_replace\s*\(\s*['\"]/.*/e"),
-    ("system/exec injection",   r'\b(system|exec|passthru|shell_exec|popen)\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)'),
-    ("create_function",         r"create_function\s*\("),
-    ("obfuscated variable",     r'\$[a-zA-Z0-9_]{1,3}\s*=\s*\$[a-zA-Z0-9_]{1,3}\s*\(\s*["\'][a-zA-Z0-9+/]{20,}'),
-    ("mail spam injector",      r'mail\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)'),
-    ("iframe inject",           r'<iframe[^>]+src=["\']http'),
-    ("script inject",           r'<script[^>]+src=["\']http[^"\']+\.(ru|cn|tk|pw|xyz|top)'),
-    ("hex-encoded PHP",         r"\\x[0-9a-f]{2}\\x[0-9a-f]{2}\\x[0-9a-f]{2}\\x[0-9a-f]{2}\\x[0-9a-f]{2}"),
-    ("auto_prepend in PHP",     r"auto_prepend_file\s*="),
-]
+from malware_patterns import MALWARE_PATTERNS
 
 # ── Non-standard WP root files (anything not in this list = suspicious) ───
 WP_ROOT_WHITELIST = {

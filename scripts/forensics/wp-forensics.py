@@ -29,20 +29,12 @@ import os
 import stat
 from datetime import datetime
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from wp_connect import (
     WPConnection, add_connection_args, print_banner, AuditResult,
     ok, warn, err, info, section
 )
-
-MALWARE_PATTERNS = [
-    r"eval\s*\(\s*base64_decode",
-    r"eval\s*\(\s*gzinflate",
-    r"c99shell|r57shell|FilesMan",
-    r"Nyx_Fallaga|TFMshell",
-    r'assert\s*\(\s*\$_(POST|GET|REQUEST)',
-    r'system\s*\(\s*\$_(GET|POST|REQUEST)',
-]
+from malware_patterns import MALWARE_PATTERNS
 
 
 def collect_evidence(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
@@ -60,7 +52,7 @@ def collect_evidence(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     # ── 2. Collect malware files ───────────────────────────────────────
     section("2. Copy malware files (evidence preservation)")
     malware_found = 0
-    for pattern in MALWARE_PATTERNS:
+    for _name, pattern in MALWARE_PATTERNS:
         hits = wp.ssh(
             f"grep -rl --include='*.php' -E '{pattern}' '{wp.wp_path}' 2>/dev/null | "
             f"grep -v '/node_modules/' | head -20"

@@ -21,29 +21,12 @@ import sys
 import os
 from datetime import datetime
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from wp_connect import (
     WPConnection, add_connection_args, print_banner, AuditResult,
     ok, warn, err, info, section, BOLD, RED, YELLOW, CYAN, DIM
 )
-
-# ── Malware signatures ─────────────────────────────────────────────────────
-SIGNATURES = [
-    ("C99 / R57 shell",        r"c99shell|r57shell|FilesMan|b374k|WSO\s+Shell"),
-    ("TFM / Nyx toolkit",      r"Nyx_Fallaga|TFMshell|GhostShell|AnonymousFox"),
-    ("eval+base64",            r"eval\s*\(\s*base64_decode"),
-    ("eval+gzinflate",         r"eval\s*\(\s*gzinflate"),
-    ("eval+str_rot13",         r"eval\s*\(\s*str_rot13"),
-    ("assert $_REQUEST",       r'assert\s*\(\s*\$_(POST|GET|REQUEST|COOKIE)'),
-    ("preg_replace /e",        r"preg_replace\s*\(\s*['\"]/.*/e"),
-    ("system/exec from $_",    r'\b(system|exec|passthru|shell_exec|popen)\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)'),
-    ("create_function",        r"create_function\s*\("),
-    ("mail spam injector",     r'mail\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)'),
-    ("iframe inject",          r'<iframe[^>]+src=["\']http'),
-    ("script inject ru/cn",   r'<script[^>]+src=["\']http[^"\']+\.(ru|cn|tk|pw|xyz|top)'),
-    ("hex obfuscation",        r"\\x[0-9a-f]{2}(\\x[0-9a-f]{2}){4,}"),
-    ("auto_prepend_file",      r"auto_prepend_file\s*="),
-]
+from malware_patterns import MALWARE_PATTERNS
 
 
 def domain_a_filesystem(wp: WPConnection, r: AuditResult) -> None:
@@ -103,7 +86,7 @@ def domain_a_filesystem(wp: WPConnection, r: AuditResult) -> None:
 def domain_b_malware(wp: WPConnection, r: AuditResult) -> None:
     """B. Malware signature scan."""
     section("DOMAIN B — Malware Signatures")
-    for name, pattern in SIGNATURES:
+    for name, pattern in MALWARE_PATTERNS:
         hits = wp.ssh(
             f"WP_PAT={repr(pattern)} grep -rl --include='*.php' -E \"$WP_PAT\" "
             f"'{wp.wp_path}' 2>/dev/null | grep -v '/node_modules/' | head -5"

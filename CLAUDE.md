@@ -52,7 +52,8 @@ wp-arsenal/
 │   └── forensics/                   ← wp-forensics, wp-db-audit, wp-attacker-profile
 ├── skills/{security,management,forensics,theme-design,cicd}/*/SKILL.md
 │   ├── theme-design/                ← kadence, elementor — design system + recovery guides
-│   └── cicd/                        ← wp-ci-deploy — pipeline integration guide
+│   ├── cicd/                        ← wp-ci-deploy — pipeline integration guide
+│   └── mine-patterns/              ← auto-pattern mining from proven OSS repos (extract → OKF → apply → feedback)
 ├── .github/workflows-examples/      ← copy into YOUR repo: scheduled scan + safe deploy templates
 ├── agents/*.md                      ← incident-responder, security-auditor, restoration, maintenance
 ├── personas/*.md                    ← security-analyst, wordpress-expert, theme-designer, site-manager
@@ -180,3 +181,10 @@ DigitalOcean · Linode / Akamai · AWS Lightsail · VPS bare metal · cPanel / P
 Skills auto-load when Claude reads this CLAUDE.md.
 Full skill details in `skills/*/SKILL.md`.
 Agent plans in `agents/*.md`. Personas in `personas/*.md`.
+
+## Auto-pattern mining (skills/mine-patterns/)
+
+Mines proven patterns from curated OSS repos → OKF format → dry-run suggestions → human review.
+Pipeline: `extract.py` (Python/PHP/YAML) → `okf.py` (format) → `apply.py` (suggest) → `feedback.py` (track).
+Curated repos: fabric, bandit, click, yara, clamav, ModSecurity, PHP_CodeSniffer, phpstan, pytest, paramiko.
+Run: `python skills/mine-patterns/extract.py <repo_path>` or use the skill in Claude Code.

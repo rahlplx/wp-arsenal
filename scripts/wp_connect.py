@@ -18,7 +18,7 @@ import sys
 import time
 import socket
 import re
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple
 
 try:
     import paramiko

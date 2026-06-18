@@ -28,7 +28,7 @@ import subprocess
 import sys
 import time
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from wp_connect import ok, warn, err, info, section, BOLD, GREEN, RED, YELLOW, DIM
 
 SCRIPT_PATHS = {
