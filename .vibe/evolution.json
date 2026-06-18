@@ -1,6 +1,6 @@
 {
-  "version": "1.2",
-  "last_updated": "2026-06-18",
+  "version": "1.3",
+  "last_updated": "2026-06-19",
   "project": "wp-arsenal",
   "rules": {
     "credential-in-shell-args": {
@@ -44,58 +44,78 @@
       "notes": "13 silent SKIPS became 13 PASSes. Harness confirmed clean in 2nd run."
     },
     "user-input-shell-validation": {
-      "fires": 1,
-      "helpful": 1,
+      "fires": 2,
+      "helpful": 2,
       "false_positive": 0,
       "quality_score": 1.0,
-      "last_updated": "2026-06-18",
+      "last_updated": "2026-06-19",
       "status": "active",
       "harness": "check-ssh-fstring-injection.sh",
-      "notes": "Caught HIGH H6 — attacker IP from DB passed to whois without validation"
+      "notes": "Fired again: http_body/http_code URL not shlex.quoted — shell injection via --site-url. Fixed 2026-06-19."
     },
     "shell-expansion-breaks-regex": {
+      "fires": 2,
+      "helpful": 2,
+      "false_positive": 0,
+      "quality_score": 1.0,
+      "last_updated": "2026-06-19",
+      "status": "active",
+      "harness": "check-grep-dollar-expansion.sh",
+      "notes": "repr() variant: same root cause (shell-expanding regex patterns). Fixed 2026-06-19 with shlex.quote."
+    },
+    "posix-sh-single-quote-semantics": {
       "fires": 1,
       "helpful": 1,
       "false_positive": 0,
       "quality_score": 1.0,
-      "last_updated": "2026-06-18",
+      "last_updated": "2026-06-19",
       "status": "active",
-      "harness": "check-grep-dollar-expansion.sh",
-      "notes": "NEW: bash $_ expansion silently broke 3 critical malware grep patterns. Fix: pass via WP_PAT env var."
+      "harness": null,
+      "notes": "NEW: POSIX sh single-quotes pass \\ literally — no backslash escaping needed inside them. replace('\\\\','\\\\\\\\') before single-quote escape is WRONG and corrupts passwords with backslashes."
+    },
+    "response-type-validation": {
+      "fires": 1,
+      "helpful": 1,
+      "false_positive": 0,
+      "quality_score": 1.0,
+      "last_updated": "2026-06-19",
+      "status": "active",
+      "harness": null,
+      "notes": "NEW: External API responses must be type-checked before iteration. REST API heuristic ('slug' in body) fired on error JSON dict, causing AttributeError on str.get(). Fix: parse JSON first, isinstance(parsed, list) before loop."
     }
   },
   "harness_checks": {
     "check-credential-exposure.sh": {
-      "runs": 2,
+      "runs": 3,
       "finds": 0,
       "false_positive": 0,
       "quality_score": 1.0,
       "status": "applied",
-      "notes": "Validates no mysqldump -p flag used; confirms MYSQL_PWD present. Passed both runs."
+      "notes": "Passed 3rd run (2026-06-19 harness session)."
     },
     "check-ssh-fstring-injection.sh": {
-      "runs": 2,
-      "finds": null,
-      "false_positive": 0,
-      "quality_score": null,
+      "runs": 3,
+      "finds": 13,
+      "false_positive": 13,
+      "quality_score": 0.8,
       "status": "applied",
-      "notes": "Non-blocking review aid — lists all .ssh(f-string) calls for manual audit"
+      "notes": "Non-blocking audit aid. 13 wp.* f-string calls flagged — all use operator config (trusted). Real injection in http_body caught by code-review not harness."
     },
     "check-test-importlib.sh": {
+      "runs": 3,
+      "finds": 0,
+      "false_positive": 0,
+      "quality_score": 1.0,
+      "status": "applied",
+      "notes": "Passed 3rd run."
+    },
+    "check-grep-dollar-expansion.sh": {
       "runs": 2,
       "finds": 0,
       "false_positive": 0,
       "quality_score": 1.0,
       "status": "applied",
-      "notes": "Guards against silent SKIP regression in smoke test suite. Passed both runs."
-    },
-    "check-grep-dollar-expansion.sh": {
-      "runs": 1,
-      "finds": 0,
-      "false_positive": 0,
-      "quality_score": 1.0,
-      "status": "applied",
-      "notes": "Catches $_ shell expansion in grep -E argument. .sh file created 2026-06-18."
+      "notes": "Passed 2nd run (repr->shlex.quote fix verified clean)."
     }
   }
 }
