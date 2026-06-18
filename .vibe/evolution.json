@@ -1,0 +1,83 @@
+{
+  "version": "1.1",
+  "last_updated": "2026-06-18",
+  "project": "wp-arsenal",
+  "rules": {
+    "credential-in-shell-args": {
+      "fires": 1,
+      "helpful": 1,
+      "false_positive": 0,
+      "quality_score": 1.0,
+      "last_updated": "2026-06-18",
+      "status": "active",
+      "harness": "check-credential-exposure.sh",
+      "notes": "Caught CRITICAL C1 — mysqldump -p flag DB password exposure in ps"
+    },
+    "type-mismatch-string-vs-int": {
+      "fires": 1,
+      "helpful": 1,
+      "false_positive": 0,
+      "quality_score": 1.0,
+      "last_updated": "2026-06-18",
+      "status": "active",
+      "harness": null,
+      "notes": "Caught CRITICAL C2 — http_code() str vs int comparison always False"
+    },
+    "shared-library-init-config": {
+      "fires": 1,
+      "helpful": 1,
+      "false_positive": 0,
+      "quality_score": 1.0,
+      "last_updated": "2026-06-18",
+      "status": "active",
+      "harness": null,
+      "notes": "Systemic: config loading in __init__ guarantees all consumers get it"
+    },
+    "importlib-for-cli-tools": {
+      "fires": 1,
+      "helpful": 1,
+      "false_positive": 0,
+      "quality_score": 1.0,
+      "last_updated": "2026-06-18",
+      "status": "active",
+      "harness": "check-test-importlib.sh",
+      "notes": "13 silent SKIPS became 13 PASSes — hyphenated filenames need importlib"
+    },
+    "user-input-shell-validation": {
+      "fires": 1,
+      "helpful": 1,
+      "false_positive": 0,
+      "quality_score": 1.0,
+      "last_updated": "2026-06-18",
+      "status": "active",
+      "harness": "check-ssh-fstring-injection.sh",
+      "notes": "Caught HIGH H6 — attacker IP from DB passed to whois without validation"
+    }
+  },
+  "harness_checks": {
+    "check-credential-exposure.sh": {
+      "runs": 1,
+      "finds": 0,
+      "false_positive": 0,
+      "quality_score": 1.0,
+      "status": "applied",
+      "notes": "Validates no mysqldump -p flag used; confirms MYSQL_PWD present"
+    },
+    "check-ssh-fstring-injection.sh": {
+      "runs": 1,
+      "finds": null,
+      "false_positive": 0,
+      "quality_score": null,
+      "status": "applied",
+      "notes": "Non-blocking review aid — lists all .ssh(f-string) calls for manual audit"
+    },
+    "check-test-importlib.sh": {
+      "runs": 1,
+      "finds": 0,
+      "false_positive": 0,
+      "quality_score": 1.0,
+      "status": "applied",
+      "notes": "Guards against silent SKIP regression in smoke test suite"
+    }
+  }
+}
