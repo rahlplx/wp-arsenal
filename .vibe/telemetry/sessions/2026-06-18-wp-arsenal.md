@@ -88,29 +88,61 @@
 
 ---
 
-## Quality Metrics
+## Quality Metrics — FINAL (session complete)
 
 | Metric | Value |
 |--------|-------|
-| Critical bugs fixed | 2 |
+| Critical bugs fixed | 4 (C1-C4 + grep expansion bug) |
 | High bugs fixed | 1 |
 | Medium bugs fixed | 1 |
-| Tests added | 45 |
+| Tests at start | 45 |
+| Tests at end | 51 |
+| Tests added this phase | 6 (TestRegressions class) |
 | Scripts created | 1 (wp-theme-restore.py) |
-| Harness checks added | 3 |
-| Patterns captured | 3 |
-| Anti-patterns captured | 3 |
-| Rules quality score avg | 1.0 |
+| Scripts enhanced | 4 (wp-scan, wp-deep-audit, wp-backup, wp-user-audit) |
+| Harness checks added | 4 (+ check-grep-dollar-expansion.sh) |
+| Patterns captured | 4 (+ wpscan-intelligence-mining) |
+| Anti-patterns captured | 4 (+ shell-expansion-in-grep-pattern) |
+| Evolution version | v1.2 |
+| Rules in evolution.json | 6 (all quality_score 1.0) |
+| Commits | b9daba7 (review fixes), 820c89c (vibe artifacts) |
 
 ---
 
-## Open Items (not committed)
+## Phase 2: vibe-review + WPScan intelligence
+
+### WPScan Mining (30 min)
+Mined WPScan (9,639⭐ Ruby) and Wordpresscan (653⭐ Python) for detection gaps.
+
+| Source | Detection added | Impact |
+|--------|-----------------|--------|
+| Wordpresscan | 36 wp-config backup variants (was 5) | 31 new detection paths |
+| Wordpresscan | `/wp-json/wp/v2/users` REST API enum | New HIGH class |
+| WPScan | 5-directory listing checks | 4 new checks |
+| WPScan | dump.sql in uploads, emergency.php, searchreplacedb2.php | CRITICAL detections |
+| WPScan | readme.html version disclosure, robots.txt parsing | MEDIUM/LOW |
+
+### Shell `$_` Expansion Bug (CRITICAL FIX)
+Discovered that 3 malware grep patterns silently broke because bash expands `$_` (last argument) before grep sees the pattern. Fixed by routing all patterns through `WP_PAT=... grep -E "$WP_PAT"`.
+
+Affected patterns (all now fixed):
+- `assert\s*\(\s*\$_(POST|GET|REQUEST|COOKIE)`
+- `(system|exec|passthru|shell_exec)\s*\(\s*\$_(GET|POST|...)`
+- `mail\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)`
+
+### wp-user-audit.py REST API section
+Added zero-auth `/wp-json/wp/v2/users` enumeration check that reveals all WordPress usernames without authentication.
+
+---
+
+## Open Items (carried over)
 
 | Item | Location | Priority |
 |------|----------|----------|
 | SFTP resource leak | scripts/management/wp-backup.py | MEDIUM |
 | Evidence archives temp path | scripts/forensics/wp-forensics.py | MEDIUM |
 | Honeypot secret in HTML | scripts/security/ | LOW |
+| MyISAM→InnoDB migration script | new script | LOW |
 
 ---
 
@@ -121,3 +153,5 @@
 3. **shared library init** — put mandatory setup in `__init__` of the one class all consumers must instantiate
 4. **MYSQL_PWD** — never `-p` flag; always env var; test with `grep -n "\-p'" | grep -E "mysqldump|mysql"`
 5. **DB values are attacker-controlled** — validate with regex before any shell interpolation
+6. **Shell `$_` expansion** — any regex containing `$_` interpolated into an f-string will silently break; use `WP_PAT={repr(pattern)} grep -E "$WP_PAT"` pattern
+7. **Mine OSS security tools** — WPScan/Wordpresscan/WPSeku source = years of attacker research, use `gh api repos/.../contents/...` to read without rate limiting
