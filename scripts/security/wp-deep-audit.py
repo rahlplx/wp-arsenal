@@ -105,8 +105,8 @@ def domain_b_malware(wp: WPConnection, r: AuditResult) -> None:
     section("DOMAIN B — Malware Signatures")
     for name, pattern in SIGNATURES:
         hits = wp.ssh(
-            f"grep -rl --include='*.php' -E '{pattern}' '{wp.wp_path}' 2>/dev/null | "
-            f"grep -v '/node_modules/' | head -5"
+            f"WP_PAT={repr(pattern)} grep -rl --include='*.php' -E \"$WP_PAT\" "
+            f"'{wp.wp_path}' 2>/dev/null | grep -v '/node_modules/' | head -5"
         )
         if hits.strip():
             for path in hits.splitlines():
@@ -158,7 +158,7 @@ def domain_c_database(wp: WPConnection, r: AuditResult) -> None:
 
     # Rank Math redirections (known attacker abuse vector)
     rm_count = wp.db(
-        f"SELECT COUNT(*) FROM {p}rank_math_redirections 2>/dev/null;"
+        f"SELECT COUNT(*) FROM {p}rank_math_redirections;"
     )
     if rm_count and rm_count.strip().isdigit() and int(rm_count.strip()) > 50:
         warn(f"Rank Math has {rm_count.strip()} redirections — check for spam")

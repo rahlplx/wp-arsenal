@@ -63,6 +63,43 @@ KNOWN_BAD_FILENAMES = [
     ".ico.php",".jpg.php",".gif.php",".png.php",
 ]
 
+# ── Dangerous tools left in webroot (WPScan-equivalent checks) ─────────────
+DANGEROUS_WEBROOT_FILES = [
+    ("emergency.php",          "CRITICAL", "Emergency password reset script in webroot"),
+    ("searchreplacedb2.php",   "CRITICAL", "Search & Replace DB tool in webroot"),
+    ("wp-config.php.bak",      "CRITICAL", "wp-config backup exposed"),
+    ("adminer.php",            "CRITICAL", "Adminer DB admin tool in webroot"),
+    ("phpinfo.php",            "HIGH",     "phpinfo() disclosure in webroot"),
+    ("info.php",               "HIGH",     "phpinfo() disclosure in webroot"),
+]
+
+# ── wp-config.php backup filename variants (from Wordpresscan research) ─────
+WP_CONFIG_BACKUPS = [
+    "wp-config.php~","wp-config.php.save",".wp-config.php.bck",
+    "wp-config.php.bck",".wp-config.php.swp","wp-config.php.swp",
+    "wp-config.php.swo","wp-config.php_bak","wp-config.bak",
+    "wp-config.php.bak","wp-config.save","wp-config.old",
+    "wp-config.php.old","wp-config.php.orig","wp-config.orig",
+    "wp-config.php.original","wp-config.original","wp-config.txt",
+    "wp-config.php.txt","wp-config.backup","wp-config.php.backup",
+    "wp-config.copy","wp-config.php.copy","wp-config.tmp",
+    "wp-config.php.tmp","wp-config.zip","wp-config.php.zip",
+    "wp-config.db","wp-config.php.db","wp-config.dat",
+    "wp-config.php.dat","wp-config.tar.gz","wp-config.php.tar.gz",
+    "wp-config.back","wp-config.php.back","wp-config.test",
+    "wp-config.php.test","wp-config.php.1","wp-config.php.2","wp-config.php.3",
+    "wp-config.php._inc","wp-config_inc",
+]
+
+# ── Directory listing checks (WPScan checks all 5) ─────────────────────────
+DIR_LISTING_PATHS = [
+    ("wp-content/uploads/",  "Uploads directory listing exposes user files"),
+    ("wp-content/plugins/",  "Plugins directory listing reveals installed plugins"),
+    ("wp-content/themes/",   "Themes directory listing reveals installed themes"),
+    ("wp-includes/",         "wp-includes directory listing exposes core internals"),
+    ("wp-admin/",            "wp-admin directory listing"),
+]
+
 
 def run_scan(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     result = AuditResult("wp-scan")
@@ -129,9 +166,11 @@ def run_scan(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     # ── E. Malware signatures ───────────────────────────────────────────
     section("E. Malware signatures (grep)")
     for name, pattern in MALWARE_PATTERNS:
+        # Pass pattern via env var so bash never sees $ signs from the regex —
+        # shell expansion of $_(POST|...) would silently break the grep match.
         hits = wp.ssh(
-            f"grep -rl --include='*.php' -E '{pattern}' '{wp.wp_path}' 2>/dev/null | "
-            f"grep -v '/node_modules/' | head -10"
+            f"WP_PAT={repr(pattern)} grep -rl --include='*.php' -E \"$WP_PAT\" "
+            f"'{wp.wp_path}' 2>/dev/null | grep -v '/node_modules/' | head -10"
         )
         if hits.strip():
             for path in hits.splitlines():
@@ -179,6 +218,85 @@ def run_scan(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
             result.add("MEDIUM", "hidden-file", "Hidden file found", path.strip())
     else:
         ok("No unexpected hidden files")
+
+    # ── I. wp-config.php backup files (36 variants) ───────────────────
+    section("I. wp-config.php backup exposure")
+    config_backups_found = []
+    for fname in WP_CONFIG_BACKUPS:
+        if wp.wp_exists(fname):
+            err(f"wp-config backup exposed: {fname}")
+            result.add("CRITICAL", "config-backup-exposed", f"wp-config backup: {fname}", wp.wp(fname))
+            config_backups_found.append(fname)
+    if not config_backups_found:
+        ok("No wp-config backup files found")
+
+    # ── J. Dangerous tools in webroot ──────────────────────────────────
+    section("J. Dangerous tools in webroot")
+    tools_found = []
+    for fname, sev, detail in DANGEROUS_WEBROOT_FILES:
+        if wp.wp_exists(fname):
+            err(f"{detail}: {fname}")
+            result.add(sev, "dangerous-webroot-tool", detail, wp.wp(fname))
+            tools_found.append(fname)
+    # Also check upload dir for SQL dump (WPScan finding)
+    if wp.wp_exists("wp-content/uploads/dump.sql"):
+        err("SQL dump found in uploads directory!")
+        result.add("CRITICAL", "sql-dump-in-uploads", "Database dump publicly accessible", wp.wp("wp-content/uploads/dump.sql"))
+        tools_found.append("uploads/dump.sql")
+    if not tools_found:
+        ok("No dangerous tools found in webroot")
+
+    # ── K. Directory listing checks (all 5 WP dirs) ────────────────────
+    section("K. Directory listing exposure")
+    if wp.site_url:
+        dir_listing_found = []
+        for rel_path, detail in DIR_LISTING_PATHS:
+            url = f"{wp.site_url.rstrip('/')}/{rel_path}"
+            body = wp.http_body(url)
+            if "Index of" in body or "Directory listing" in body:
+                err(f"Directory listing enabled: {rel_path}")
+                result.add("HIGH", "directory-listing", detail, url)
+                dir_listing_found.append(rel_path)
+        if not dir_listing_found:
+            ok("No directory listing found on any WP directory")
+    else:
+        info("--site-url not provided — skipping directory listing checks")
+
+    # ── L. readme.html version disclosure ──────────────────────────────
+    section("L. Version disclosure")
+    if wp.site_url:
+        for readme_file in ["readme.html", "olvasdel.html", "liesmich.html"]:
+            url = f"{wp.site_url.rstrip('/')}/{readme_file}"
+            body = wp.http_body(url)
+            if body and "wordpress" in body.lower():
+                import re as _re
+                ver_match = _re.search(r"Version\s+([\d.]+)", body)
+                version = ver_match.group(1) if ver_match else "unknown"
+                warn(f"{readme_file} is publicly accessible (WP version: {version})")
+                result.add("MEDIUM", "version-disclosure", f"WP version {version} via {readme_file}", url)
+                break
+        else:
+            ok("No version disclosure via readme files")
+
+    # ── M. robots.txt — Disallow path leakage ──────────────────────────
+    section("M. robots.txt analysis")
+    if wp.site_url:
+        robots_body = wp.http_body(f"{wp.site_url.rstrip('/')}/robots.txt")
+        if robots_body:
+            disallowed = [l.strip() for l in robots_body.splitlines()
+                          if l.strip().lower().startswith("disallow:") and l.strip() != "Disallow:"]
+            if disallowed:
+                info(f"robots.txt Disallow entries ({len(disallowed)}):")
+                for entry in disallowed:
+                    path = entry.split(":", 1)[1].strip()
+                    info(f"  {path}")
+                    if any(x in path.lower() for x in ["backup", "admin", "config", "install", "db", "sql"]):
+                        warn(f"Sensitive path in robots.txt: {path}")
+                        result.add("LOW", "robots-sensitive-path", f"Sensitive path disclosed: {path}", f"{wp.site_url}/robots.txt")
+            else:
+                ok("robots.txt has no Disallow entries")
+        else:
+            info("No robots.txt found")
 
     # ── Stats ──────────────────────────────────────────────────────────
     criticals = sum(1 for f in result.findings if f["severity"] == "CRITICAL")

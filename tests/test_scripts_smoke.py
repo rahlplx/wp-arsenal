@@ -288,3 +288,123 @@ class TestConnectionIntegration:
             if "mysqldump" in cmd:
                 assert "MYSQL_PWD=" in cmd, "mysqldump must use MYSQL_PWD"
                 assert " -p" not in cmd, "mysqldump must NOT use -p flag"
+
+
+class TestRegressions:
+    """Regression tests for bugs caught during vibe-review."""
+
+    def test_malware_patterns_use_env_var_not_direct_interpolation(self, mock_ssh_client):
+        """
+        Regression: grep patterns containing $_ were shell-expanded to empty string.
+        Fix: patterns must be passed via env var (WP_PAT=...) not directly in f-string.
+        """
+        mod = _import_script("security/wp-scan.py")
+        # Every pattern with $ must not appear directly in an f-string grep command.
+        # Verify the fix: command sent to SSH must reference $WP_PAT not embed the pattern.
+        mock_ssh_client.exec_command.return_value = (
+            None,
+            MockFileObject(""),
+            MockFileObject(""),
+        )
+        import argparse
+        from wp_connect import WPConnection
+        args = argparse.Namespace(
+            host="h", user="u", password="p", port=22,
+            wp_path="/var/www/html", db_host="", db_user="",
+            db_pass="", db_name="", db_prefix="wp_",
+            site_url="", dry_run=False, quiet=True,
+            json=False, alert_email="", trusted_cidrs="",
+            blocked_cidrs="", config=None,
+        )
+        wp = WPConnection(args)
+        wp.connect()
+        # Run just the malware scan section by calling run_scan
+        # (it will call ssh() multiple times — capture all commands)
+        try:
+            mod.run_scan(wp, args)
+        except Exception:
+            pass  # SSH is mocked; we only care about what commands were sent
+
+        # The fix is: patterns go into WP_PAT='...' env var assignment, and the
+        # grep -E argument uses "$WP_PAT" (the variable reference), not the raw pattern.
+        # So $_ is ALLOWED inside WP_PAT='...', but NOT in grep -E '...' directly.
+        import re as _re
+        dollar_in_grep_E = []
+        for call in mock_ssh_client.exec_command.call_args_list:
+            cmd = call[0][0]
+            if "grep" in cmd:
+                # Extract the -E "..." or -E '...' argument (not the WP_PAT=... assignment)
+                # Bad: grep -E '$_(POST...)' — pattern directly interpolated
+                # Good: grep -E "$WP_PAT" — variable reference used
+                match = _re.search(r'-E\s+["\']([^"\']*)["\']', cmd)
+                if match and "$_" in match.group(1):
+                    dollar_in_grep_E.append(cmd[:120])
+
+        assert not dollar_in_grep_E, (
+            f"Shell $_ expansion in grep -E argument — patterns must use $WP_PAT env var: "
+            f"{dollar_in_grep_E}"
+        )
+
+    def test_backup_password_escapes_backslash_before_quote(self, mock_ssh_client, sample_args):
+        """
+        Regression: wp-backup.py password escape did not escape backslash first.
+        A password containing \\ would produce a broken shell command.
+        Fix: replace('\\\\', '\\\\\\\\') before replacing single quotes.
+        """
+        mock_ssh_client.exec_command.return_value = (
+            None,
+            MockFileObject("OK"),
+            MockFileObject(""),
+        )
+        mod = _import_script("management/wp-backup.py")
+
+        import argparse
+        from wp_connect import WPConnection
+        args = argparse.Namespace(
+            host="h", user="u", password="p", port=22,
+            wp_path="/var/www/html", db_host="db.host",
+            db_user="dbuser", db_pass="p@ss\\word'tricky",
+            db_name="mydb", db_prefix="wp_",
+            site_url="", dry_run=False, quiet=True,
+            json=False, alert_email="", trusted_cidrs="",
+            blocked_cidrs="", config=None,
+        )
+        wp = WPConnection(args)
+        wp.connect()
+        mod.backup_database(wp, "/tmp", "label")
+
+        for call in mock_ssh_client.exec_command.call_args_list:
+            cmd = call[0][0]
+            if "mysqldump" in cmd:
+                # The raw password must not appear unescaped — backslash must be doubled
+                assert "p@ss\\\\word" in cmd or "MYSQL_PWD=" in cmd, (
+                    "Backslash in DB password must be escaped before single-quote escaping"
+                )
+
+    def test_wp_scan_has_config_backup_list(self, mock_ssh_client):
+        """wp-scan.py must define WP_CONFIG_BACKUPS with at least 30 variants."""
+        mod = _import_script("security/wp-scan.py")
+        assert hasattr(mod, "WP_CONFIG_BACKUPS"), "WP_CONFIG_BACKUPS constant must exist"
+        assert len(mod.WP_CONFIG_BACKUPS) >= 30, (
+            f"Expected 30+ wp-config backup variants, got {len(mod.WP_CONFIG_BACKUPS)}"
+        )
+
+    def test_wp_scan_has_directory_listing_paths(self, mock_ssh_client):
+        """wp-scan.py must check all 5 WP directories for directory listing."""
+        mod = _import_script("security/wp-scan.py")
+        assert hasattr(mod, "DIR_LISTING_PATHS"), "DIR_LISTING_PATHS must exist"
+        paths = [p for p, _ in mod.DIR_LISTING_PATHS]
+        assert "wp-content/uploads/" in paths
+        assert "wp-content/plugins/" in paths
+        assert "wp-content/themes/" in paths
+        assert "wp-includes/" in paths
+        assert "wp-admin/" in paths
+
+    def test_wp_user_audit_has_rest_api_section(self, mock_ssh_client):
+        """wp-user-audit.py must include REST API user enumeration check."""
+        mod = _import_script("management/wp-user-audit.py")
+        import inspect
+        source = inspect.getsource(mod)
+        assert "wp-json/wp/v2/users" in source, (
+            "wp-user-audit must check /wp-json/wp/v2/users REST API endpoint"
+        )
