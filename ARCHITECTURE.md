@@ -147,7 +147,7 @@ AuditResult
 |---|---|
 | `shlex.quote(url)` | All `curl` calls in `http_code()` and `http_body()` |
 | `WP_PAT=shlex.quote(pattern) grep -E "$WP_PAT"` | Malware grep patterns with `$_` regex metacharacters |
-| Single-quoted shell strings for file paths | `wp.wp_path`, `wp.wp(rel)` in `find`, `ls`, `cp` |
+| Single-quoted shell strings for file paths | `wp.wp_path`, `wp.wp(rel)` in `find`, `ls`, `cp` — **Note:** single-quoting fails if the path itself contains `'`. Paths come from operator config (not user HTTP input), limiting exploitability, but `shlex.quote()` would be strictly safer (tracked as audit item S-4). |
 
 ### PHP MU-Plugin Security Model
 

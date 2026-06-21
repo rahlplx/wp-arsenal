@@ -118,7 +118,7 @@ if ($valid) { _wp_arsenal_honeypot_triggered(); exit; }
 
 | ID | Severity | OWASP | File | Description |
 |---|---|---|---|---|
-| S-11 | Low | A03 Injection | `honeypot.php:83–87` | `$fp` fingerprint JSON keys and values from `$_GET['fp']` are interpolated into the alert email body without sanitisation (`"  {$k}: {$v}\n"`). If `$v` contains `\r\n`, it could inject RFC-2822 email headers. Mitigate with `wordwrap(strip_tags((string)$v), 80)` on each value. |
+| S-11 | Low | A06 Vulnerable Components | `honeypot.php:83–87` | `$fp` fingerprint JSON keys and values are interpolated into the email body (`$body`) without sanitisation. RFC-2822 header injection requires untrusted input in the email *headers* (4th `mail()` arg) or subject — body content cannot inject headers. Risk is limited to malformed body display or control-character noise in the alert. Mitigate with `strip_tags((string)$v)` for clean display. |
 | S-12 | Low | A09 Logging | `wp_connect.py:249` | `db()` prints `warn("DB credentials not configured — skipping DB query")` to stdout. In CI/CD mode with `--quiet`, this is suppressed. Without `--quiet`, a DB-skip warning appears mid-scan without identifying which check was skipped. |
 | S-13 | Low | A05 Security Misconfiguration | `wp-harden.py:96–97` | `UPLOADS_HTACCESS` uses Apache 2.2-era `deny from all` syntax. Correct for compatibility, but may generate deprecation warnings on Apache 2.4+ with `LogLevel warn`. |
 | S-14 | Low | A09 Logging | `wp-forensics.py:126–132` | Bash history and crontab are collected without checking if the server is a shared hosting environment where `crontab -l` may require interactive prompts or return a generic "no crontab" error that is silently ignored. |
@@ -286,6 +286,17 @@ g.add_argument("--key-file", dest="key_file", default="",
                help="Path to SSH private key file (alternative to --password)")
 ```
 
+```python
+# config_loader.py load_config() — add inside the ssh block section
+_set_if_default(args, "key_file", ssh.get("key_file", ""))
+```
+
+```yaml
+# config.example.yaml — key_file already shown but needs to flow through config_loader
+ssh:
+  key_file: ""   # Path to private key; now loaded by config_loader and passed to paramiko
+```
+
 ### Fix 3 — Known-hosts enforcement (S-1)
 
 ```python
@@ -299,17 +310,23 @@ client.set_missing_host_key_policy(paramiko.RejectPolicy())
 # client.set_missing_host_key_policy(paramiko.WarningPolicy())
 ```
 
-### Fix 4 — `shell_quote_password()` centralisation (Q-1)
+### Fix 4 — Centralise password quoting using `shlex.quote()` (Q-1)
+
+`shlex.quote()` is already imported in `wp_connect.py`, is part of the stdlib, and handles all POSIX shell edge cases (single quotes, control characters) correctly:
 
 ```python
-# wp_connect.py — add to WPConnection class
-@staticmethod
-def shell_quote_password(password: str) -> str:
-    """Escape a password for safe use inside a POSIX sh single-quoted string."""
-    return password.replace("'", "'\\''")
+import shlex
+
+# BEFORE — three inconsistent hand-rolled versions across three files
+pass_escaped = db_pass.replace("'", "'\\''")
+cmd = f"MYSQL_PWD='{pass_escaped}' mysqldump ..."
+
+# AFTER — use shlex.quote() directly in the env-var assignment
+cmd = f"MYSQL_PWD={shlex.quote(db_pass)} mysqldump ..."
 ```
 
-Replace all three occurrences of the inline `db_pass.replace(...)` logic with `WPConnection.shell_quote_password(wp.db_pass)`.
+`shlex.quote("p@ss'word")` → `"p@ss'word"` wrapped correctly as `'p@ss'"'"'word'`.  
+Remove all three inline `replace("'", "'\\''")` occurrences and apply `shlex.quote()` directly.
 
 ---
 
