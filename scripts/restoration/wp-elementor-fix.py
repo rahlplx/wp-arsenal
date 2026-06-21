@@ -21,6 +21,7 @@ Usage:
 
 import argparse
 import json
+import shlex
 import sys
 import os
 import time
@@ -137,7 +138,7 @@ def fix_elementor(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
         if wp.dry_run:
             info("[DRY-RUN] Would clear wp-content/cache/")
         else:
-            wp.ssh(f"find '{cache_dir}' -mindepth 1 -delete 2>/dev/null || true")
+            wp.ssh(f"find {shlex.quote(cache_dir)} -mindepth 1 -delete 2>/dev/null || true")
             ok("Cleared wp-content/cache/")
     else:
         info("No wp-content/cache/ directory")

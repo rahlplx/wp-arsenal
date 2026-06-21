@@ -22,6 +22,7 @@ Usage:
 
 import argparse
 import os
+import shlex
 import sys
 import tarfile
 import tempfile
@@ -43,9 +44,12 @@ def make_remote_backup(wp: WPConnection, remote_path: str) -> str:
     backup_dir = wp.wp(BACKUP_DIR_REL)
     full_remote = wp.wp(remote_path)
 
-    wp.ssh(f"mkdir -p '{backup_dir}'")
+    wp.ssh(f"mkdir -p {shlex.quote(backup_dir)}")
     if wp.wp_exists(remote_path):
-        wp.ssh(f"tar -czf '{backup_dir}/{backup_name}' -C '{wp.wp_path}' '{remote_path}' 2>/dev/null")
+        wp.ssh(
+            f"tar -czf {shlex.quote(backup_dir + '/' + backup_name)} "
+            f"-C {shlex.quote(wp.wp_path)} {shlex.quote(remote_path)} 2>/dev/null"
+        )
         ok(f"Pre-deploy backup created: {BACKUP_DIR_REL}/{backup_name}")
     else:
         info(f"{remote_path} does not exist yet on server — nothing to back up (fresh deploy)")
@@ -59,8 +63,10 @@ def restore_remote_backup(wp: WPConnection, remote_path: str, backup_name: str) 
         return
     backup_dir = wp.wp(BACKUP_DIR_REL)
     full_remote = wp.wp(remote_path)
-    wp.ssh(f"rm -rf '{full_remote}'")
-    wp.ssh(f"tar -xzf '{backup_dir}/{backup_name}' -C '{wp.wp_path}'")
+    wp.ssh(f"rm -rf {shlex.quote(full_remote)}")
+    wp.ssh(
+        f"tar -xzf {shlex.quote(backup_dir + '/' + backup_name)} -C {shlex.quote(wp.wp_path)}"
+    )
     ok(f"Rolled back {remote_path} from {backup_name}")
 
 
@@ -76,11 +82,11 @@ def upload_directory(wp: WPConnection, local_path: str, remote_path: str) -> int
         info(f"[DRY-RUN] Would upload {file_count} file(s) to {remote_path}")
         return file_count
 
-    wp.ssh(f"mkdir -p '{full_remote}'")
+    wp.ssh(f"mkdir -p {shlex.quote(full_remote)}")
     for root, dirs, files in os.walk(local_path):
         rel_dir = os.path.relpath(root, local_path)
         remote_dir = full_remote if rel_dir == "." else f"{full_remote}/{rel_dir.replace(os.sep, '/')}"
-        wp.ssh(f"mkdir -p '{remote_dir}'")
+        wp.ssh(f"mkdir -p {shlex.quote(remote_dir)}")
         for fname in files:
             local_file = os.path.join(root, fname)
             remote_file = f"{remote_dir}/{fname}"
@@ -150,10 +156,10 @@ def main():
         if not args.dry_run:
             backup_dir = wp.wp(BACKUP_DIR_REL)
             prefix = f"backup-{args.remote_path.replace('/', '_')}-"
-            listing = wp.ssh(f"ls -1t '{backup_dir}' 2>/dev/null | grep '^{prefix}'")
-            files = [l for l in listing.splitlines() if l.strip()]
+            listing = wp.ssh(f"ls -1t {shlex.quote(backup_dir)} 2>/dev/null")
+            files = [l.strip() for l in listing.splitlines() if l.strip().startswith(prefix)]
             for old in files[args.keep_backups:]:
-                wp.ssh(f"rm -f '{backup_dir}/{old}'")
+                wp.ssh(f"rm -f {shlex.quote(backup_dir + '/' + old)}")
             if len(files) > args.keep_backups:
                 ok(f"Pruned {len(files) - args.keep_backups} old backup(s), kept {args.keep_backups}")
 

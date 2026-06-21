@@ -21,6 +21,7 @@ Usage:
 import argparse
 import json
 import os
+import shlex
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -82,7 +83,7 @@ def get_active_theme(wp: WPConnection) -> str:
 def get_installed_themes(wp: WPConnection) -> list[str]:
     """List all theme directory names in wp-content/themes/."""
     out = wp.ssh(
-        f"ls -1 '{wp.wp('wp-content/themes')}' 2>/dev/null"
+        f"ls -1 {shlex.quote(wp.wp('wp-content/themes'))} 2>/dev/null"
     )
     return [t.strip() for t in out.splitlines() if t.strip() and not t.startswith(".")]
 
@@ -93,7 +94,7 @@ def scan_theme_signatures(wp: WPConnection, theme_slug: str, result: AuditResult
     found = 0
     for pattern, severity, category, desc in THEME_SIGNATURES:
         matches = wp.ssh(
-            f"grep -rIl --include='*.php' -E '{pattern}' '{theme_dir}' 2>/dev/null"
+            f"grep -rIl --include='*.php' -E {shlex.quote(pattern)} {shlex.quote(theme_dir)} 2>/dev/null"
         )
         for fpath in matches.strip().splitlines():
             fpath = fpath.strip()
@@ -101,7 +102,7 @@ def scan_theme_signatures(wp: WPConnection, theme_slug: str, result: AuditResult
                 continue
             # Get the matching line for context
             line = wp.ssh(
-                f"grep -nI -m 1 -E '{pattern}' '{fpath}' 2>/dev/null | head -1"
+                f"grep -nI -m 1 -E {shlex.quote(pattern)} {shlex.quote(fpath)} 2>/dev/null | head -1"
             ).strip()
             err(f"  [{severity}] {desc}")
             err(f"    File: {fpath}")
@@ -116,13 +117,13 @@ def scan_recently_modified(wp: WPConnection, theme_slug: str, days: int, result:
     """Find theme PHP files modified within the last N days."""
     theme_dir = wp.wp(f"wp-content/themes/{theme_slug}")
     out = wp.ssh(
-        f"find '{theme_dir}' -name '*.php' -mtime -{days} 2>/dev/null"
+        f"find {shlex.quote(theme_dir)} -name '*.php' -mtime -{days} 2>/dev/null"
     )
     files = [f.strip() for f in out.splitlines() if f.strip()]
     if files:
         warn(f"  {len(files)} PHP file(s) modified in last {days} days:")
         for f in files[:20]:
-            mtime = wp.ssh(f"stat -c '%y' '{f}' 2>/dev/null | cut -d' ' -f1").strip()
+            mtime = wp.ssh(f"stat -c '%y' {shlex.quote(f)} 2>/dev/null | cut -d' ' -f1").strip()
             info(f"    {mtime}  {f}")
             result.add("MEDIUM", "recently-modified",
                        f"PHP file modified {mtime}: {f}", f)
@@ -135,7 +136,7 @@ def scan_unexpected_files(wp: WPConnection, theme_slug: str, result: AuditResult
     """Find files with unexpected extensions in theme directory."""
     theme_dir = wp.wp(f"wp-content/themes/{theme_slug}")
     out = wp.ssh(
-        f"find '{theme_dir}' -type f 2>/dev/null"
+        f"find {shlex.quote(theme_dir)} -type f 2>/dev/null"
     )
     unexpected = []
     for f in out.strip().splitlines():

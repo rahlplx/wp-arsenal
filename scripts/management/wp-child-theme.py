@@ -25,6 +25,7 @@ Usage:
 import argparse
 import json
 import os
+import shlex
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -60,7 +61,7 @@ def get_parent_display_name(wp: WPConnection, parent_slug: str) -> str:
     """Read Theme Name from parent's style.css."""
     style_css = wp.wp(f"wp-content/themes/{parent_slug}/style.css")
     out = wp.ssh(
-        f"grep -m 1 '^Theme Name:' '{style_css}' 2>/dev/null"
+        f"grep -m 1 '^Theme Name:' {shlex.quote(style_css)} 2>/dev/null"
     )
     if out.strip():
         return out.strip().replace("Theme Name:", "").strip()
@@ -71,7 +72,7 @@ def get_parent_version(wp: WPConnection, parent_slug: str) -> str:
     """Read Version from parent's style.css."""
     style_css = wp.wp(f"wp-content/themes/{parent_slug}/style.css")
     out = wp.ssh(
-        f"grep -m 1 '^Version:' '{style_css}' 2>/dev/null"
+        f"grep -m 1 '^Version:' {shlex.quote(style_css)} 2>/dev/null"
     )
     if out.strip():
         return out.strip().replace("Version:", "").strip()
@@ -246,7 +247,7 @@ def main() -> None:
         if args.list_parents:
             section("Installed themes (valid parents)")
             out = wp.ssh(
-                f"ls -1 '{wp.wp('wp-content/themes')}' 2>/dev/null"
+                f"ls -1 {shlex.quote(wp.wp('wp-content/themes'))} 2>/dev/null"
             )
             active = wp.db(
                 f"SELECT option_value FROM {wp.db_prefix}options WHERE option_name='template' LIMIT 1;"
@@ -311,7 +312,7 @@ def main() -> None:
             return
 
         # Create directory and upload files
-        wp.ssh(f"mkdir -p '{child_dir}'")
+        wp.ssh(f"mkdir -p {shlex.quote(child_dir)}")
 
         wp.sftp_write(f"{child_dir}/style.css",     style_content.encode())
         ok(f"  Created style.css")
@@ -323,8 +324,12 @@ def main() -> None:
         ok(f"  Created index.php")
 
         # Fix permissions
-        wp.ssh(f"chmod 755 '{child_dir}'")
-        wp.ssh(f"chmod 644 '{child_dir}'/style.css '{child_dir}'/functions.php '{child_dir}'/index.php")
+        wp.ssh(f"chmod 755 {shlex.quote(child_dir)}")
+        wp.ssh(
+            f"chmod 644 {shlex.quote(child_dir + '/style.css')} "
+            f"{shlex.quote(child_dir + '/functions.php')} "
+            f"{shlex.quote(child_dir + '/index.php')}"
+        )
         ok(f"  Permissions set (755 dir, 644 files)")
 
         result.add("INFO", "theme-created", f"Child theme created: {child_slug}", child_dir)

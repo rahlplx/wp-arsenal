@@ -23,6 +23,7 @@ Usage:
 
 import argparse
 import json
+import shlex
 import sys
 import os
 
@@ -57,10 +58,10 @@ def restore_from_sibling(wp: WPConnection, slug: str, sibling_path: str) -> bool
     """Copy plugin from sibling WP installation on same server."""
     src = f"{sibling_path}/{slug}"
     dst = wp.wp(f"wp-content/plugins/{slug}")
-    exists = wp.ssh(f"test -d '{src}' && echo Y || echo N")
+    exists = wp.ssh(f"test -d {shlex.quote(src)} && echo Y || echo N")
     if exists != "Y":
         return False
-    out = wp.ssh(f"cp -ra '{src}' '{dst}' && echo OK || echo FAIL")
+    out = wp.ssh(f"cp -ra {shlex.quote(src)} {shlex.quote(dst)} && echo OK || echo FAIL")
     return "OK" in out
 
 
@@ -74,7 +75,7 @@ def restore_from_wporg(wp: WPConnection, slug: str) -> bool:
     # Get latest version via API
     api_url = f"https://api.wordpress.org/plugins/info/1.0/{canonical}.json"
     version = wp.ssh(
-        f"curl -s '{api_url}' 2>/dev/null | "
+        f"curl -s {shlex.quote(api_url)} 2>/dev/null | "
         f"python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get('version',''))\" "
         f"2>/dev/null"
     )
@@ -87,7 +88,7 @@ def restore_from_wporg(wp: WPConnection, slug: str) -> bool:
 
     info(f"  Downloading {canonical} from wordpress.org...")
     download = wp.ssh(
-        f"wget -q -O '{tmp_zip}' '{dl_url}' 2>/dev/null && echo OK || echo FAIL",
+        f"wget -q -O {shlex.quote(tmp_zip)} {shlex.quote(dl_url)} 2>/dev/null && echo OK || echo FAIL",
         timeout=120
     )
     if "FAIL" in download or "OK" not in download:
@@ -95,9 +96,9 @@ def restore_from_wporg(wp: WPConnection, slug: str) -> bool:
 
     # Unzip to plugins dir
     unzip = wp.ssh(
-        f"unzip -q '{tmp_zip}' -d '{tmp_dir}' 2>/dev/null && "
-        f"mv '{tmp_dir}'/* '{plugins_dir}/' 2>/dev/null && "
-        f"rm -rf '{tmp_zip}' '{tmp_dir}' && echo OK || echo FAIL",
+        f"unzip -q {shlex.quote(tmp_zip)} -d {shlex.quote(tmp_dir)} 2>/dev/null && "
+        f"mv {shlex.quote(tmp_dir)}/* {shlex.quote(plugins_dir)}/ 2>/dev/null && "
+        f"rm -rf {shlex.quote(tmp_zip)} {shlex.quote(tmp_dir)} && echo OK || echo FAIL",
         timeout=60
     )
     return "OK" in unzip
@@ -108,7 +109,7 @@ def activate_plugin(wp: WPConnection, slug: str) -> bool:
     p = wp.db_prefix
     # Find the main plugin file
     main_file = wp.ssh(
-        f"find '{wp.wp(f'wp-content/plugins/{slug}')}' "
+        f"find {shlex.quote(wp.wp(f'wp-content/plugins/{slug}'))} "
         f"-maxdepth 1 -name '*.php' 2>/dev/null | head -1"
     )
     if not main_file.strip():
@@ -122,9 +123,10 @@ def activate_plugin(wp: WPConnection, slug: str) -> bool:
     path_len = len(rel_path)
 
     # Check if already in active_plugins
+    safe_rel = WPConnection.sql_escape(rel_path)
     already = wp.db(
         f"SELECT COUNT(*) FROM {p}options "
-        f"WHERE option_name='active_plugins' AND option_value LIKE '%{rel_path}%';"
+        f"WHERE option_name='active_plugins' AND option_value LIKE '%{safe_rel}%';"
     )
     if already.strip() and already.strip() != "0":
         info(f"  {slug} already in active_plugins")
@@ -156,8 +158,8 @@ if (!in_array('{rel_path}', $plugins)) {{
     if wp.site_url:
         result = wp.http_body(wp.site_url.rstrip("/") + "/wp-content/activate-probe.php", timeout=20)
     else:
-        result = wp.ssh(f"php '{probe_path}' 2>/dev/null")
-    wp.ssh(f"rm -f '{probe_path}'")
+        result = wp.ssh(f"php {shlex.quote(probe_path)} 2>/dev/null")
+    wp.ssh(f"rm -f {shlex.quote(probe_path)}")
     return "ACTIVATED" in result or "ALREADY_ACTIVE" in result
 
 

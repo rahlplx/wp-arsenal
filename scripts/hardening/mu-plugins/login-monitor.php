@@ -65,6 +65,7 @@ add_action( 'wp_login', function( string $user_login, WP_User $user ) {
     $from_header = defined( 'WP_ARSENAL_ALERT_FROM' ) && WP_ARSENAL_ALERT_FROM
                  ? WP_ARSENAL_ALERT_FROM
                  : "security@{$from_domain}";
+    $from_header = str_replace( [ "\r", "\n" ], '', $from_header );
 
     $subject = "[WP-ARSENAL] Admin login: {$user_login} on {$site} from {$ip}";
 

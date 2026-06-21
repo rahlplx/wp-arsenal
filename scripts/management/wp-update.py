@@ -24,6 +24,7 @@ Usage:
 import argparse
 import json
 import os
+import shlex
 import sys
 import time
 
@@ -37,7 +38,7 @@ from wp_connect import (
 def get_installed_wp_version(wp: WPConnection) -> str:
     """Read WordPress version from wp-includes/version.php."""
     out = wp.ssh(
-        f"grep \"\\$wp_version\" '{wp.wp_path}/wp-includes/version.php' "
+        f"grep \"\\$wp_version\" {shlex.quote(wp.wp_path + '/wp-includes/version.php')} "
         f"2>/dev/null | head -1"
     )
     for part in out.split("="):
@@ -65,9 +66,9 @@ def update_wp_core(wp: WPConnection, version: str, result: AuditResult) -> bool:
     tmp_tar = f"/tmp/wordpress-{version}.tar.gz"
     tmp_dir = f"/tmp/wordpress-{version}"
 
+    dl_url = f"https://wordpress.org/wordpress-{version}.tar.gz"
     dl = wp.ssh(
-        f"wget -q -O '{tmp_tar}' "
-        f"'https://wordpress.org/wordpress-{version}.tar.gz' 2>/dev/null"
+        f"wget -q -O {shlex.quote(tmp_tar)} {shlex.quote(dl_url)} 2>/dev/null"
         f" && echo OK || echo FAIL",
         timeout=120
     )
@@ -76,18 +77,18 @@ def update_wp_core(wp: WPConnection, version: str, result: AuditResult) -> bool:
         result.add("HIGH", "core-update-failed", f"Download failed for WP {version}", "")
         return False
 
-    wp.ssh(f"tar -xzf '{tmp_tar}' -C /tmp/ 2>/dev/null")
+    wp.ssh(f"tar -xzf {shlex.quote(tmp_tar)} -C /tmp/ 2>/dev/null")
 
     rsync = wp.ssh(
         f"rsync -a --delete"
         f" --exclude='wp-content/'"
         f" --exclude='wp-config.php'"
         f" --exclude='.htaccess'"
-        f" '{tmp_dir}/wordpress/' '{wp.wp_path}/'"
+        f" {shlex.quote(tmp_dir + '/wordpress/')} {shlex.quote(wp.wp_path + '/')}"
         f" 2>/dev/null && echo OK || echo FAIL",
         timeout=120
     )
-    wp.ssh(f"rm -rf '{tmp_tar}' '{tmp_dir}'")
+    wp.ssh(f"rm -rf {shlex.quote(tmp_tar)} {shlex.quote(tmp_dir)}")
 
     if "OK" in rsync:
         ok(f"WordPress core updated to {version}")
@@ -100,8 +101,9 @@ def update_wp_core(wp: WPConnection, version: str, result: AuditResult) -> bool:
 
 def get_plugin_version_wporg(wp: WPConnection, slug: str) -> str:
     """Query wordpress.org for latest plugin version."""
+    api_url = f"https://api.wordpress.org/plugins/info/1.0/{slug}.json"
     out = wp.ssh(
-        f"curl -s 'https://api.wordpress.org/plugins/info/1.0/{slug}.json' 2>/dev/null"
+        f"curl -s {shlex.quote(api_url)} 2>/dev/null"
         f" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get('version',''))\" "
         f"2>/dev/null"
     )
@@ -111,13 +113,13 @@ def get_plugin_version_wporg(wp: WPConnection, slug: str) -> str:
 def get_installed_plugin_version(wp: WPConnection, slug: str) -> str:
     """Read Version: header from main plugin PHP file."""
     main_file = wp.ssh(
-        f"find '{wp.wp('wp-content/plugins/' + slug)}' "
+        f"find {shlex.quote(wp.wp('wp-content/plugins/' + slug))} "
         f"-maxdepth 1 -name '*.php' 2>/dev/null | head -1"
     ).strip()
     if not main_file:
         return "unknown"
     out = wp.ssh(
-        f"grep -i 'Version:' '{main_file}' 2>/dev/null | head -1"
+        f"grep -i 'Version:' {shlex.quote(main_file)} 2>/dev/null | head -1"
     )
     for part in out.split(":"):
         candidate = part.strip()
@@ -132,9 +134,9 @@ def update_plugin(wp: WPConnection, slug: str, new_version: str, result: AuditRe
     tmp_dir = f"/tmp/plugin-update-{slug}"
     plugins_dir = wp.wp("wp-content/plugins")
 
+    plugin_url = f"https://downloads.wordpress.org/plugin/{slug}.{new_version}.zip"
     dl = wp.ssh(
-        f"wget -q -O '{tmp_zip}' "
-        f"'https://downloads.wordpress.org/plugin/{slug}.{new_version}.zip' 2>/dev/null"
+        f"wget -q -O {shlex.quote(tmp_zip)} {shlex.quote(plugin_url)} 2>/dev/null"
         f" && echo OK || echo FAIL",
         timeout=120
     )
@@ -144,10 +146,10 @@ def update_plugin(wp: WPConnection, slug: str, new_version: str, result: AuditRe
         return False
 
     wp.ssh(
-        f"rm -rf '{plugins_dir}/{slug}' 2>/dev/null;"
-        f" unzip -q '{tmp_zip}' -d '{tmp_dir}' 2>/dev/null"
-        f" && mv '{tmp_dir}/{slug}' '{plugins_dir}/{slug}'"
-        f" && rm -rf '{tmp_zip}' '{tmp_dir}'"
+        f"rm -rf {shlex.quote(plugins_dir + '/' + slug)} 2>/dev/null;"
+        f" unzip -q {shlex.quote(tmp_zip)} -d {shlex.quote(tmp_dir)} 2>/dev/null"
+        f" && mv {shlex.quote(tmp_dir + '/' + slug)} {shlex.quote(plugins_dir + '/' + slug)}"
+        f" && rm -rf {shlex.quote(tmp_zip)} {shlex.quote(tmp_dir)}"
     )
     ok(f"  {slug} → {new_version}")
     result.add("INFO", "plugin-updated", f"{slug} updated to {new_version}", "")
@@ -165,7 +167,7 @@ def site_responds(wp: WPConnection) -> bool:
 def get_installed_plugins(wp: WPConnection) -> list[str]:
     """List plugin slugs (directory names) from filesystem."""
     out = wp.ssh(
-        f"ls -1 '{wp.wp('wp-content/plugins')}' 2>/dev/null"
+        f"ls -1 {shlex.quote(wp.wp('wp-content/plugins'))} 2>/dev/null"
     )
     return [p.strip() for p in out.splitlines() if p.strip() and not p.startswith(".")]
 

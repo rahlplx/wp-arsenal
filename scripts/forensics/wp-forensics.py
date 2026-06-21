@@ -24,10 +24,11 @@ Usage:
 
 import argparse
 import json
-import shlex
-import sys
 import os
+import re
+import shlex
 import stat
+import sys
 from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -54,30 +55,35 @@ def collect_evidence(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
 
     # ── Setup ──────────────────────────────────────────────────────────
     section("1. Setup evidence directory")
-    wp.ssh(f"mkdir -p '{evidence_dir}/malware' '{evidence_dir}/logs' "
-           f"'{evidence_dir}/config' '{evidence_dir}/db'"
-           f" && chmod 700 '{evidence_dir}'")
+    wp.ssh(
+        f"mkdir -p {shlex.quote(evidence_dir + '/malware')} "
+        f"{shlex.quote(evidence_dir + '/logs')} "
+        f"{shlex.quote(evidence_dir + '/config')} "
+        f"{shlex.quote(evidence_dir + '/db')}"
+        f" && chmod 700 {shlex.quote(evidence_dir)}"
+    )
     ok(f"Evidence dir: {evidence_dir}")
 
     # ── 2. Collect malware files ───────────────────────────────────────
     section("2. Copy malware files (evidence preservation)")
     malware_found = 0
+    malware_dst = shlex.quote(evidence_dir + '/malware/')
     for pattern in MALWARE_PATTERNS:
         hits = wp.ssh(
-            f"WP_PAT={shlex.quote(pattern)} grep -rl --include='*.php' -E \"$WP_PAT\" '{wp.wp_path}' 2>/dev/null | "
+            f"WP_PAT={shlex.quote(pattern)} grep -rl --include='*.php' -E \"$WP_PAT\" {shlex.quote(wp.wp_path)} 2>/dev/null | "
             f"grep -v '/node_modules/' | head -20"
         )
         for path in [p.strip() for p in hits.splitlines() if p.strip()]:
-            wp.ssh(f"cp '{path}' '{evidence_dir}/malware/' 2>/dev/null")
+            wp.ssh(f"cp {shlex.quote(path)} {malware_dst} 2>/dev/null")
             malware_found += 1
             info(f"Preserved: {path}")
 
     # PHP in uploads
     uploads_php = wp.ssh(
-        f"find '{wp.wp('wp-content/uploads')}' -name '*.php' 2>/dev/null"
+        f"find {shlex.quote(wp.wp('wp-content/uploads'))} -name '*.php' 2>/dev/null"
     )
     for path in [p.strip() for p in uploads_php.splitlines() if p.strip()]:
-        wp.ssh(f"cp '{path}' '{evidence_dir}/malware/' 2>/dev/null")
+        wp.ssh(f"cp {shlex.quote(path)} {malware_dst} 2>/dev/null")
         malware_found += 1
 
     result.stat("malware_files_preserved", malware_found)
@@ -93,16 +99,15 @@ def collect_evidence(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
         (wp.wp("wp-content/debug.log"),   "wp-debug.log"),
     ]
     for src, dst in log_sources:
-        exists = wp.ssh(f"test -f '{src}' && echo Y || echo N")
+        exists = wp.ssh(f"test -f {shlex.quote(src)} && echo Y || echo N")
         if exists == "Y":
-            wp.ssh(f"cp '{src}' '{evidence_dir}/logs/{dst}' 2>/dev/null")
+            wp.ssh(f"cp {shlex.quote(src)} {shlex.quote(evidence_dir + '/logs/' + dst)} 2>/dev/null")
             ok(f"Collected: {dst}")
 
     # ── 4. WP Config (redacted) ────────────────────────────────────────
     section("4. wp-config.php (redacted)")
     wpconfig = wp.sftp_read(wp.wp("wp-config.php")).decode("utf-8", "replace")
     # Redact DB password
-    import re
     redacted = re.sub(
         r"(define\s*\(\s*['\"]DB_PASSWORD['\"]\s*,\s*)['\"]([^'\"]+)['\"]",
         r"\1'***REDACTED***'",
@@ -140,13 +145,14 @@ def collect_evidence(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
             f"{p}users", f"{p}usermeta", f"{p}options",
             f"{p}posts", f"{p}postmeta",
         ]
-        pass_escaped = wp.db_pass.replace("'", "'\\''")
         for table in tables:
             wp.ssh(
-                f"MYSQL_PWD='{pass_escaped}' mysqldump"
-                f" -h '{wp.db_host}' -u '{wp.db_user}'"
-                f" '{wp.db_name}' '{table}' 2>/dev/null"
-                f" > '{evidence_dir}/db/{table}.sql'",
+                f"MYSQL_PWD={shlex.quote(wp.db_pass)} mysqldump"
+                f" -h {shlex.quote(wp.db_host)}"
+                f" -u {shlex.quote(wp.db_user)}"
+                f" {shlex.quote(wp.db_name)}"
+                f" {shlex.quote(table)} 2>/dev/null"
+                f" > {shlex.quote(evidence_dir + '/db/' + table + '.sql')}",
                 timeout=120
             )
             ok(f"Dumped: {table}")
@@ -169,12 +175,12 @@ def collect_evidence(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     # ── 9. Create archive ──────────────────────────────────────────────
     section("8. Create evidence archive")
     archive = wp.ssh(
-        f"tar -czf '{archive_path}' -C /tmp 'wp-evidence-{ts}/' "
-        f"&& chmod 600 '{archive_path}'"
+        f"tar -czf {shlex.quote(archive_path)} -C /tmp {shlex.quote('wp-evidence-' + ts + '/')} "
+        f"&& chmod 600 {shlex.quote(archive_path)}"
         f"&& echo OK || echo FAIL"
     )
     if "OK" in archive:
-        size = wp.ssh(f"stat -c '%s' '{archive_path}' 2>/dev/null")
+        size = wp.ssh(f"stat -c '%s' {shlex.quote(archive_path)} 2>/dev/null")
         ok(f"Evidence archive: {archive_path} ({size} bytes)")
         result.stat("archive_path_on_server", archive_path)
         result.stat("archive_size_bytes", size)
@@ -196,7 +202,7 @@ def collect_evidence(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
             err(f"Download failed: {exc}")
 
     # Cleanup temp dir (archive is kept)
-    wp.ssh(f"rm -rf '{evidence_dir}'")
+    wp.ssh(f"rm -rf {shlex.quote(evidence_dir)}")
 
     return result
 
