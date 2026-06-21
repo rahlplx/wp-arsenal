@@ -132,8 +132,8 @@ if ($valid) { _wp_arsenal_honeypot_triggered(); exit; }
 | ID | Severity | Description | Fix |
 |---|---|---|---|
 | Q-1 | Medium | Password escaping logic (`db_pass.replace("'", "'\\''")`) appears in three places: `wp_connect.db()` (with wrong backslash handling), `wp-backup.backup_database()`, and `wp-forensics.collect_evidence()`. | Add `WPConnection.shell_quote_password() -> str` static method; use in all three. |
-| Q-2 | Low | `wp-forensics.py:56-58` builds a `mkdir -p` + `chmod 700` command. The evidence subdirectories (`malware/`, `logs/`, `config/`, `db/`) are world-readable between their creation and the parent `chmod 700`. Use `umask 077` before mkdir: `umask 077 && mkdir -p ...` — then chmod is belt-and-suspenders. |
-| Q-3 | Low | `is_apache()` in `wp-firewall.py` uses `wp.wp_exists(".htaccess")` as the heuristic for Apache, which is not reliable (`.htaccess` may be absent on Apache too, or present on LiteSpeed). The `php_uname("s")` call is made but its result is unused. |
+| Q-2 | Low | `wp-forensics.py:56-58` builds a `mkdir -p` + `chmod 700` command. The evidence subdirectories (`malware/`, `logs/`, `config/`, `db/`) are world-readable between their creation and the parent `chmod 700`. | Prefix mkdir with `umask 077` so subdirs are created private: `umask 077 && mkdir -p ...` |
+| Q-3 | Low | `is_apache()` in `wp-firewall.py` uses `wp.wp_exists(".htaccess")` as the heuristic for Apache, which is not reliable (`.htaccess` may be absent on Apache too, or present on LiteSpeed). | Check for `apache` in `wp.ssh("ps aux")` or `Server` response header as a more reliable signal. |
 
 ### Cyclomatic Complexity
 
@@ -168,7 +168,7 @@ if ($valid) { _wp_arsenal_honeypot_triggered(); exit; }
 
 **Recommendation:** Pin with `~=` (compatible release) to avoid accidental breaking-change upgrades:
 
-```
+```plaintext
 paramiko~=3.4
 pyyaml~=6.0
 pytest~=8.3

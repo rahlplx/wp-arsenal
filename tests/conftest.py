@@ -93,6 +93,7 @@ def sample_args():
         host="example.com",
         user="testuser",
         password="testpass",
+        key_file="",
         port=22,
         wp_path="/var/www/html",
         db_host="localhost",

@@ -84,6 +84,7 @@ def load_config(args: Namespace, config_path: Optional[str] = None) -> Namespace
     _set_if_default(args, "user",     ssh.get("user", ""))
     _set_if_default(args, "password", ssh.get("password", ""))
     _set_if_default(args, "port",     ssh.get("port", 22))
+    _set_if_default(args, "key_file", ssh.get("key_file", ""))
 
     # ── WordPress ──────────────────────────────────────────────────────
     wp = cfg.get("wordpress", {})
@@ -114,8 +115,17 @@ def load_config(args: Namespace, config_path: Optional[str] = None) -> Namespace
             if cidr not in trusted:
                 trusted.append(cidr)
 
-    args.trusted_cidrs    = getattr(args, "trusted_cidrs", []) or trusted
-    args.blocked_cidrs    = getattr(args, "blocked_cidrs", []) or list(cfg.get("blocked_cidrs", []) or [])
+    # Normalize: CLI delivers --trusted-cidrs as a raw string; config delivers a list.
+    # We split the string here so the winning value is always a list of prefixes.
+    existing_trusted = getattr(args, "trusted_cidrs", None) or ""
+    if isinstance(existing_trusted, str):
+        existing_trusted = [v.strip() for v in existing_trusted.split(",") if v.strip()]
+    args.trusted_cidrs = existing_trusted if existing_trusted else trusted
+
+    existing_blocked = getattr(args, "blocked_cidrs", None) or ""
+    if isinstance(existing_blocked, str):
+        existing_blocked = [v.strip() for v in existing_blocked.split(",") if v.strip()]
+    args.blocked_cidrs = existing_blocked if existing_blocked else list(cfg.get("blocked_cidrs", []) or [])
     args.hosting_provider = getattr(args, "hosting_provider", "") or provider
 
     # ── Sibling sites ──────────────────────────────────────────────────
@@ -125,13 +135,11 @@ def load_config(args: Namespace, config_path: Optional[str] = None) -> Namespace
 
 
 def _set_if_default(args: Namespace, attr: str, value) -> None:
-    """Set args.attr = value only if current value is empty/None/default."""
+    """Set args.attr = value only if the current value is the default (empty/None, or 22 for port)."""
     current = getattr(args, attr, None)
-    if current in (None, "", 22 if attr == "port" else None):
-        if attr == "port" and value == 22 and current == 22:
-            return  # 22 is the real default — don't overwrite
-        if value not in (None, ""):
-            setattr(args, attr, value)
+    is_default = current in (None, "", 22) if attr == "port" else current in (None, "")
+    if is_default and value not in (None, ""):
+        setattr(args, attr, value)
 
 
 def add_config_arg(parser) -> None:

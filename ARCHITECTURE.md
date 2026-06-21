@@ -20,7 +20,7 @@
 
 ## Directory Structure
 
-```
+```text
 wp-arsenal/
 ├── scripts/
 │   ├── wp_connect.py            ← Core library: WPConnection, AuditResult, helpers
@@ -100,7 +100,7 @@ Every audit script creates an `AuditResult("script-name")`, calls `.add(severity
 
 ## Data Flow
 
-```
+```text
 User/CI
   │
   ▼
@@ -147,7 +147,7 @@ AuditResult
 |---|---|
 | `shlex.quote(url)` | All `curl` calls in `http_code()` and `http_body()` |
 | `WP_PAT=shlex.quote(pattern) grep -E "$WP_PAT"` | Malware grep patterns with `$_` regex metacharacters |
-| Single-quoted shell strings for file paths | `wp.wp_path`, `wp.wp(rel)` in `find`, `ls`, `cp` — **Note:** single-quoting fails if the path itself contains `'`. Paths come from operator config (not user HTTP input), limiting exploitability, but `shlex.quote()` would be strictly safer (tracked as audit item S-4). |
+| `shlex.quote()` for all shell-interpolated paths | `wp.wp_path`, `wp.wp(rel)` in `find`, `ls`, `cp` and `wp_exists()`/`wp_readable()` — migrated from manual single-quoting to `shlex.quote()` to correctly handle paths containing `'`. (Note: audit item S-4 tracks the separate `mysqldump` credential-injection issue, not this path-quoting concern.) |
 
 ### PHP MU-Plugin Security Model
 
