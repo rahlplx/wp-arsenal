@@ -145,6 +145,13 @@ class WPConnection:
         for attempt in range(1, retries + 1):
             try:
                 client = paramiko.SSHClient()
+                # Load ~/.ssh/known_hosts so keys for known hosts ARE verified.
+                # WarningPolicy covers hosts not yet in known_hosts — it logs a
+                # warning but still connects (compatible with diverse hosting envs).
+                try:
+                    client.load_system_host_keys()
+                except Exception:
+                    pass
                 client.set_missing_host_key_policy(paramiko.WarningPolicy())
                 client.connect(
                     self.host, port=self.port,

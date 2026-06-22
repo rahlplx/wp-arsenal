@@ -115,16 +115,12 @@ def load_config(args: Namespace, config_path: Optional[str] = None) -> Namespace
             if cidr not in trusted:
                 trusted.append(cidr)
 
-    # Normalize: CLI delivers --trusted-cidrs as a raw string; config delivers a list.
-    # We split the string here so the winning value is always a list of prefixes.
-    existing_trusted = getattr(args, "trusted_cidrs", None) or ""
-    if isinstance(existing_trusted, str):
-        existing_trusted = [v.strip() for v in existing_trusted.split(",") if v.strip()]
+    # Normalize: CLI delivers --trusted-cidrs as a raw comma string; config delivers a list.
+    # _normalize_cidr_list converts either form to a list of prefix strings.
+    existing_trusted = _normalize_cidr_list(getattr(args, "trusted_cidrs", None))
     args.trusted_cidrs = existing_trusted if existing_trusted else trusted
 
-    existing_blocked = getattr(args, "blocked_cidrs", None) or ""
-    if isinstance(existing_blocked, str):
-        existing_blocked = [v.strip() for v in existing_blocked.split(",") if v.strip()]
+    existing_blocked = _normalize_cidr_list(getattr(args, "blocked_cidrs", None))
     args.blocked_cidrs = existing_blocked if existing_blocked else list(cfg.get("blocked_cidrs", []) or [])
     args.hosting_provider = getattr(args, "hosting_provider", "") or provider
 
@@ -132,6 +128,15 @@ def load_config(args: Namespace, config_path: Optional[str] = None) -> Namespace
     args.sibling_sites = getattr(args, "sibling_sites", []) or (cfg.get("sibling_sites", []) or [])
 
     return args
+
+
+def _normalize_cidr_list(raw) -> list:
+    """Convert a CLI comma-string or a config list to a list of CIDR prefix strings."""
+    if isinstance(raw, str):
+        return [v.strip() for v in raw.split(",") if v.strip()]
+    if isinstance(raw, list):
+        return [str(v) for v in raw if v]
+    return []
 
 
 def _set_if_default(args: Namespace, attr: str, value) -> None:

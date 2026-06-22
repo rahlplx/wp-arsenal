@@ -23,6 +23,7 @@ Usage:
 
 import argparse
 import json
+import re
 import shlex
 import sys
 import os
@@ -32,6 +33,21 @@ from wp_connect import (
     WPConnection, add_connection_args, print_banner, AuditResult,
     ok, warn, err, info, section
 )
+
+_SLUG_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')
+
+
+def _validate_slug(slug: str) -> str:
+    """Raise ValueError if slug contains path-traversal or shell-unsafe characters."""
+    if not _SLUG_RE.match(slug):
+        raise ValueError(f"Invalid plugin slug {slug!r} — must match [A-Za-z0-9._-]+")
+    return slug
+
+
+def _php_str(value: str) -> str:
+    """Escape value for safe embedding inside a PHP single-quoted string literal."""
+    return value.replace("\\", "\\\\").replace("'", "\\'")
+
 
 # Canonical wordpress.org slugs for common plugins
 WP_ORG_SLUGS = {
@@ -94,10 +110,13 @@ def restore_from_wporg(wp: WPConnection, slug: str) -> bool:
     if "FAIL" in download or "OK" not in download:
         return False
 
-    # Unzip to plugins dir
+    # Unzip to plugins dir — target the canonical subdirectory by name so
+    # flat zips (no top-level subdir) don't scatter files across plugins/.
+    plugin_src = shlex.quote(tmp_dir + "/" + canonical)
+    plugin_dst = shlex.quote(plugins_dir + "/" + canonical)
     unzip = wp.ssh(
         f"unzip -q {shlex.quote(tmp_zip)} -d {shlex.quote(tmp_dir)} 2>/dev/null && "
-        f"mv {shlex.quote(tmp_dir)}/* {shlex.quote(plugins_dir)}/ 2>/dev/null && "
+        f"mv {plugin_src} {plugin_dst} 2>/dev/null && "
         f"rm -rf {shlex.quote(tmp_zip)} {shlex.quote(tmp_dir)} && echo OK || echo FAIL",
         timeout=60
     )
@@ -122,43 +141,38 @@ def activate_plugin(wp: WPConnection, slug: str) -> bool:
     rel_path = parts[1].strip()
     path_len = len(rel_path)
 
-    # Check if already in active_plugins
+    # Check if already in active_plugins — use LOCATE (not LIKE) to avoid
+    # % and _ acting as wildcards in plugin paths like rank_math/rank_math.php.
     safe_rel = WPConnection.sql_escape(rel_path)
     already = wp.db(
         f"SELECT COUNT(*) FROM {p}options "
-        f"WHERE option_name='active_plugins' AND option_value LIKE '%{safe_rel}%';"
+        f"WHERE option_name='active_plugins' AND LOCATE('{safe_rel}', option_value) > 0;"
     )
     if already.strip() and already.strip() != "0":
         info(f"  {slug} already in active_plugins")
         return True
 
-    # Append to serialized array via direct PHP (more reliable than string manipulation)
-    probe_url = wp.site_url + "/wp-admin/admin-ajax.php" if wp.site_url else ""
-    # Use MySQL to add via PHP serialization pattern
-    add_sql = (
-        f"UPDATE {p}options "
-        f"SET option_value = REPLACE(option_value, 'a:', 'a:') "
-        f"WHERE option_name='active_plugins';"
-    )
-    # Safer: append via PHP script dropped temporarily
+    # Activate via a PHP script run over SSH CLI. Written to /tmp (not docroot)
+    # so it is never web-accessible. Both wp_path and rel_path are escaped for
+    # PHP single-quoted string literals before interpolation.
+    safe_wp_path = _php_str(wp.wp_path)
+    safe_rel_php = _php_str(rel_path)
     php_activate = f"""<?php
-define('ABSPATH', '{wp.wp_path}/');
-require_once('{wp.wp_path}/wp-load.php');
+define('ABSPATH', '{safe_wp_path}/');
+require_once('{safe_wp_path}/wp-load.php');
 $plugins = get_option('active_plugins', array());
-if (!in_array('{rel_path}', $plugins)) {{
-    $plugins[] = '{rel_path}';
+if (!in_array('{safe_rel_php}', $plugins)) {{
+    $plugins[] = '{safe_rel_php}';
     update_option('active_plugins', $plugins);
     echo 'ACTIVATED';
 }} else {{
     echo 'ALREADY_ACTIVE';
 }}
 """
-    probe_path = wp.wp("wp-content/activate-probe.php")
+    probe_path = f"/tmp/wpa-activate-{wp.db_prefix}{slug}.php"
     wp.sftp_write(probe_path, php_activate.encode())
-    if wp.site_url:
-        result = wp.http_body(wp.site_url.rstrip("/") + "/wp-content/activate-probe.php", timeout=20)
-    else:
-        result = wp.ssh(f"php {shlex.quote(probe_path)} 2>/dev/null")
+    wp.ssh(f"chmod 600 {shlex.quote(probe_path)}")
+    result = wp.ssh(f"php {shlex.quote(probe_path)} 2>/dev/null")
     wp.ssh(f"rm -f {shlex.quote(probe_path)}")
     return "ACTIVATED" in result or "ALREADY_ACTIVE" in result
 
@@ -177,6 +191,11 @@ def main() -> None:
     args = parser.parse_args()
 
     plugins = [p.strip() for p in args.plugins.split(",") if p.strip()]
+    for slug in plugins:
+        try:
+            _validate_slug(slug)
+        except ValueError as exc:
+            sys.exit(f"[ERROR] {exc}")
 
     print_banner(f"WP-PLUGIN-RESTORE — Restoring {len(plugins)} plugin(s)", args.dry_run)
 

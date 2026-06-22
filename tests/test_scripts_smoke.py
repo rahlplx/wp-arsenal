@@ -729,3 +729,140 @@ class TestSecurityFixesBehavioral:
         assert "shlex" in source, (
             "wp-forensics.py grep patterns must use shlex.quote — same $_ expansion bug as wp-scan.py"
         )
+
+
+class TestCodeReviewFixes:
+    """Tests for bugs found and fixed in the /code-review pass."""
+
+    # ── PHP string escaping ───────────────────────────────────────────────────
+
+    def test_php_str_escapes_single_quote(self, mock_ssh_client):
+        """_php_str must escape single quotes so they don't break PHP string literals."""
+        mod = _import_script("restoration/wp-plugin-restore.py")
+        assert hasattr(mod, "_php_str"), "_php_str helper must exist"
+        result = mod._php_str("it's-plugin")
+        # Raw unescaped ' must not appear — only \' is acceptable
+        assert result == "it\\'s-plugin", (
+            f"_php_str must replace ' with \\', got: {result!r}"
+        )
+
+    def test_php_str_escapes_backslash(self, mock_ssh_client):
+        """_php_str must escape backslashes before escaping quotes (order matters)."""
+        mod = _import_script("restoration/wp-plugin-restore.py")
+        result = mod._php_str("C:\\path\\to")
+        assert result == "C:\\\\path\\\\to", (
+            f"_php_str must double backslashes, got: {result!r}"
+        )
+
+    def test_php_str_no_op_on_safe_value(self, mock_ssh_client):
+        """_php_str must leave paths without quotes or backslashes unchanged."""
+        mod = _import_script("restoration/wp-plugin-restore.py")
+        safe = "rank-math/rank-math.php"
+        assert mod._php_str(safe) == safe
+
+    # ── Slug validation ───────────────────────────────────────────────────────
+
+    def test_validate_slug_accepts_valid_slugs(self, mock_ssh_client):
+        """_validate_slug must accept normal WordPress plugin slugs."""
+        mod = _import_script("restoration/wp-plugin-restore.py")
+        for slug in ["elementor", "rank-math", "woocommerce", "my_plugin.v2"]:
+            assert mod._validate_slug(slug) == slug
+
+    def test_validate_slug_rejects_path_traversal(self, mock_ssh_client):
+        """_validate_slug must reject slugs containing ../"""
+        import pytest as _pytest
+        mod = _import_script("restoration/wp-plugin-restore.py")
+        with _pytest.raises(ValueError):
+            mod._validate_slug("../../etc/passwd")
+
+    def test_validate_slug_rejects_spaces(self, mock_ssh_client):
+        """_validate_slug must reject slugs with spaces."""
+        import pytest as _pytest
+        mod = _import_script("restoration/wp-plugin-restore.py")
+        with _pytest.raises(ValueError):
+            mod._validate_slug("my plugin")
+
+    def test_validate_slug_rejects_shell_special(self, mock_ssh_client):
+        """_validate_slug must reject slugs with shell metacharacters."""
+        import pytest as _pytest
+        mod = _import_script("restoration/wp-plugin-restore.py")
+        for bad in ["plug$(cmd)", "plug;rm", "plug`id`"]:
+            with _pytest.raises(ValueError):
+                mod._validate_slug(bad)
+
+    # ── LOCATE instead of LIKE ────────────────────────────────────────────────
+
+    def test_activate_plugin_uses_locate_not_like(self, mock_ssh_client):
+        """activate_plugin must use LOCATE() not LIKE to avoid wildcard mismatches on _ and %."""
+        import inspect
+        mod = _import_script("restoration/wp-plugin-restore.py")
+        source = inspect.getsource(mod.activate_plugin)
+        assert "LOCATE(" in source, "activate_plugin must use LOCATE() for active_plugins check"
+        assert " LIKE " not in source, "activate_plugin must NOT use LIKE (wildcards _ and % break plugin paths)"
+
+    # ── Probe in /tmp not docroot ─────────────────────────────────────────────
+
+    def test_activate_probe_written_to_tmp_not_docroot(self, mock_ssh_client):
+        """activate_plugin probe must be written to /tmp, not wp-content (web-accessible)."""
+        import inspect
+        mod = _import_script("restoration/wp-plugin-restore.py")
+        source = inspect.getsource(mod.activate_plugin)
+        assert "/tmp/" in source, "probe must go to /tmp to avoid web exposure"
+        assert "wp-content/activate-probe" not in source, (
+            "probe must NOT be placed in wp-content — it becomes publicly accessible"
+        )
+
+    # ── Flat-zip fix ──────────────────────────────────────────────────────────
+
+    def test_restore_from_wporg_uses_named_dir_not_glob(self, mock_ssh_client):
+        """restore_from_wporg must mv canonical/ by name, not mv */, to handle flat zips."""
+        import inspect
+        mod = _import_script("restoration/wp-plugin-restore.py")
+        source = inspect.getsource(mod.restore_from_wporg)
+        # The glob pattern tmp_dir/* should NOT appear — we use the named subdir instead
+        assert "tmp_dir}/*" not in source and "tmp_dir + '/')*" not in source, (
+            "restore_from_wporg must not use glob mv */; use named canonical/ directory instead"
+        )
+
+    # ── config_loader: _normalize_cidr_list helper ────────────────────────────
+
+    def test_normalize_cidr_list_splits_comma_string(self):
+        """_normalize_cidr_list must split CLI comma-string into list."""
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../scripts"))
+        from config_loader import _normalize_cidr_list
+        result = _normalize_cidr_list("192.168.1., 10.0.0., 127.0.0.1")
+        assert result == ["192.168.1.", "10.0.0.", "127.0.0.1"]
+
+    def test_normalize_cidr_list_passes_through_list(self):
+        """_normalize_cidr_list must return a list unchanged."""
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../scripts"))
+        from config_loader import _normalize_cidr_list
+        lst = ["10.0.", "172.16."]
+        assert _normalize_cidr_list(lst) == lst
+
+    def test_normalize_cidr_list_none_returns_empty(self):
+        """_normalize_cidr_list(None) must return []."""
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../scripts"))
+        from config_loader import _normalize_cidr_list
+        assert _normalize_cidr_list(None) == []
+
+    def test_normalize_cidr_list_empty_string_returns_empty(self):
+        """_normalize_cidr_list('') must return []."""
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../scripts"))
+        from config_loader import _normalize_cidr_list
+        assert _normalize_cidr_list("") == []
+
+    # ── known_hosts loaded ────────────────────────────────────────────────────
+
+    def test_connect_loads_system_host_keys(self, mock_ssh_client, sample_args):
+        """connect() must call load_system_host_keys() so known hosts are verified."""
+        from wp_connect import WPConnection
+        wp = WPConnection(sample_args)
+        wp.connect()
+        mock_ssh_client.load_system_host_keys.assert_called(), (
+            "load_system_host_keys() must be called so known hosts are actually verified"
+        )
