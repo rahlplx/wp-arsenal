@@ -101,6 +101,8 @@ def nuke(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     existing = wp.sftp_read(ht_path)
     if b"deny from all" in existing:
         ok("uploads/.htaccess already blocks PHP")
+    elif wp.dry_run:
+        info("[DRY-RUN] Would write PHP-blocking .htaccess to uploads/")
     else:
         if wp.sftp_write(ht_path, htaccess_content):
             ok("Wrote PHP-blocking .htaccess to uploads/")

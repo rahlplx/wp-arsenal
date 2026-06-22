@@ -43,8 +43,10 @@ Usage:
 import argparse
 import json
 import re
+import shlex
 import sys
 import os
+import uuid
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from wp_connect import (
@@ -225,7 +227,7 @@ def audit_wp_structure(wp: WPConnection, result: AuditResult) -> dict:
 
     # ── Permissions audit ──
     perm_out = wp.ssh(
-        f"find '{wp.wp('wp-content/themes')}' -maxdepth 3 -perm /o+w 2>/dev/null | head -20"
+        f"find {shlex.quote(wp.wp('wp-content/themes'))} -maxdepth 3 -perm /o+w 2>/dev/null | head -20"
     )
     if perm_out.strip():
         for line in perm_out.strip().splitlines():
@@ -293,7 +295,7 @@ def audit_theme_files(wp: WPConnection, theme_slug: str, result: AuditResult) ->
             ok(f"  {f}")
 
     # Template hierarchy files
-    all_files = wp.ssh(f"find '{theme_dir}' -maxdepth 2 -name '*.php' 2>/dev/null")
+    all_files = wp.ssh(f"find {shlex.quote(theme_dir)} -maxdepth 2 -name '*.php' 2>/dev/null")
     template_files = [
         line.strip() for line in all_files.splitlines()
         if line.strip() and not "/assets/" in line and not "/inc/" in line
@@ -302,7 +304,7 @@ def audit_theme_files(wp: WPConnection, theme_slug: str, result: AuditResult) ->
     info(f"PHP templates: {len(template_files)} files")
 
     # Asset directories
-    asset_dirs = wp.ssh(f"ls -1 '{theme_dir}' 2>/dev/null")
+    asset_dirs = wp.ssh(f"ls -1 {shlex.quote(theme_dir)} 2>/dev/null")
     for item in asset_dirs.splitlines():
         item = item.strip()
         if item in ("css", "js", "assets", "images", "fonts", "img", "src", "dist"):
@@ -508,7 +510,7 @@ def restore_theme_from_backup(wp: WPConnection, theme_slug: str,
         err(f"Backup file not found: {backup_path}")
         return False
 
-    remote_tmp = f"/tmp/wp-theme-restore-{theme_slug}.tar.gz"
+    remote_tmp = f"/tmp/wp-theme-restore-{uuid.uuid4().hex}.tar.gz"
 
     if wp.dry_run:
         info(f"[DRY-RUN] Would upload {backup_path} → {remote_tmp}")
@@ -528,7 +530,7 @@ def restore_theme_from_backup(wp: WPConnection, theme_slug: str,
     # Extract
     theme_dir = wp.wp("wp-content/themes")
     out = wp.ssh(
-        f"tar -xzf '{remote_tmp}' -C '{theme_dir}' 2>&1 && echo OK || echo FAIL",
+        f"tar -xzf {shlex.quote(remote_tmp)} -C {shlex.quote(theme_dir)} 2>&1 && echo OK || echo FAIL",
         timeout=120
     )
     if "FAIL" in out or "OK" not in out:
@@ -538,12 +540,12 @@ def restore_theme_from_backup(wp: WPConnection, theme_slug: str,
 
     # Set permissions
     restored_dir = f"{theme_dir}/{theme_slug}"
-    wp.ssh(f"find '{restored_dir}' -type d -exec chmod 755 {{}} \\;")
-    wp.ssh(f"find '{restored_dir}' -type f -exec chmod 644 {{}} \\;")
+    wp.ssh(f"find {shlex.quote(restored_dir)} -type d -exec chmod 755 {{}} \\;")
+    wp.ssh(f"find {shlex.quote(restored_dir)} -type f -exec chmod 644 {{}} \\;")
     ok("Permissions set: 755 dirs, 644 files")
 
     # Cleanup tmp
-    wp.ssh(f"rm -f '{remote_tmp}'")
+    wp.ssh(f"rm -f {shlex.quote(remote_tmp)}")
 
     # Verify
     if wp.wp_exists(f"wp-content/themes/{theme_slug}/style.css"):
@@ -580,7 +582,7 @@ def clear_theme_caches(wp: WPConnection, theme_slug: str,
 
         # Delete generated CSS files from filesystem
         elementor_cache = wp.wp("wp-content/uploads/elementor/css")
-        out = wp.ssh(f"rm -f '{elementor_cache}'/*.css 2>/dev/null && echo OK")
+        out = wp.ssh(f"rm -f {shlex.quote(elementor_cache)}/*.css 2>/dev/null && echo OK")
         if "OK" in out:
             ok("Elementor CSS files deleted (will regenerate on next load)")
 
@@ -600,19 +602,19 @@ def clear_theme_caches(wp: WPConnection, theme_slug: str,
     # W3 Total Cache
     if wp.wp_exists("wp-content/cache/minify"):
         if not wp.dry_run:
-            wp.ssh(f"rm -rf '{wp.wp('wp-content/cache/minify')}'/* 2>/dev/null")
+            wp.ssh(f"rm -rf {shlex.quote(wp.wp('wp-content/cache/minify'))}/* 2>/dev/null")
             ok("W3TC minify cache cleared")
 
     # WP Rocket
     if wp.wp_exists("wp-content/cache/wp-rocket"):
         if not wp.dry_run:
-            wp.ssh(f"rm -rf '{wp.wp('wp-content/cache/wp-rocket')}'/* 2>/dev/null")
+            wp.ssh(f"rm -rf {shlex.quote(wp.wp('wp-content/cache/wp-rocket'))}/* 2>/dev/null")
             ok("WP Rocket cache cleared")
 
     # LiteSpeed Cache
     if wp.wp_exists("wp-content/cache/LiteSpeed"):
         if not wp.dry_run:
-            wp.ssh(f"rm -rf '{wp.wp('wp-content/cache/LiteSpeed')}'/* 2>/dev/null")
+            wp.ssh(f"rm -rf {shlex.quote(wp.wp('wp-content/cache/LiteSpeed'))}/* 2>/dev/null")
             ok("LiteSpeed cache cleared")
 
     # WP core rewrite rules (theme switch can change permalink structure)
@@ -683,7 +685,7 @@ def fix_theme_database(wp: WPConnection, theme_slug: str, result: AuditResult) -
 
     # Fix current_theme display name from style.css
     style_path = wp.wp(f"wp-content/themes/{theme_slug}/style.css")
-    name_out = wp.ssh(f"grep -m1 '^Theme Name:' '{style_path}' 2>/dev/null")
+    name_out = wp.ssh(f"grep -m1 '^Theme Name:' {shlex.quote(style_path)} 2>/dev/null")
     if name_out:
         display_name = name_out.replace("Theme Name:", "").strip()
         safe_name = WPConnection.sql_escape(display_name)
@@ -723,14 +725,14 @@ def step_by_step_restoration(wp: WPConnection, args: argparse.Namespace,
     p = wp.db_prefix
     backup_dir = wp.wp("wp-content/wp-arsenal-theme-backups")
     if not wp.dry_run:
-        wp.ssh(f"mkdir -p '{backup_dir}'")
+        wp.ssh(f"mkdir -p {shlex.quote(backup_dir)}")
         theme_dir = wp.wp(f"wp-content/themes/{theme_slug}")
         if wp.wp_exists(f"wp-content/themes/{theme_slug}"):
-            ts_out = wp.ssh("date +%Y%m%d-%H%M%S")
-            ts = ts_out.strip() or "backup"
+            import time as _time
+            ts = _time.strftime("%Y%m%d-%H%M%S")
             archive = f"{backup_dir}/{theme_slug}-pre-restore-{ts}.tar.gz"
             out = wp.ssh(
-                f"tar -czf '{archive}' -C '{wp.wp('wp-content/themes')}' '{theme_slug}' "
+                f"tar -czf {shlex.quote(archive)} -C {shlex.quote(wp.wp('wp-content/themes'))} {shlex.quote(theme_slug)} "
                 f"2>/dev/null && echo OK || echo FAIL",
                 timeout=60
             )

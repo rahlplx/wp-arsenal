@@ -18,6 +18,7 @@ import json
 import shlex
 import sys
 import os
+import uuid
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from wp_connect import (
@@ -38,7 +39,7 @@ def get_latest_wp_version(wp: WPConnection) -> str:
 
 def restore_core(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     result = AuditResult("wp-restore-core")
-    tmp_dir = "/tmp/wp-core-restore"
+    tmp_dir = f"/tmp/wp-core-restore-{uuid.uuid4().hex}"
 
     # ── Detect WP version ──────────────────────────────────────────────
     section("1. Determine WP version")

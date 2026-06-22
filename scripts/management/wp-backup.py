@@ -59,7 +59,9 @@ def backup_database(wp: WPConnection, backup_dir: str, label: str) -> str | None
     )
     if "FAIL" in gzip_result or "OK" not in gzip_result:
         err("Database gzip failed")
-        wp.ssh(f"rm -f {shlex.quote(raw_path)}")
+        # gzip -f may have already consumed raw_path and written a partial .gz;
+        # clean up both to avoid leaving a corrupt archive on disk.
+        wp.ssh(f"rm -f {shlex.quote(raw_path)} {shlex.quote(dump_path)}")
         return None
 
     size = wp.ssh(f"du -sh {shlex.quote(dump_path)} 2>/dev/null | cut -f1")

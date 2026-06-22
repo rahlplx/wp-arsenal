@@ -77,7 +77,15 @@ def update_wp_core(wp: WPConnection, version: str, result: AuditResult) -> bool:
         result.add("HIGH", "core-update-failed", f"Download failed for WP {version}", "")
         return False
 
-    wp.ssh(f"mkdir -p {shlex.quote(tmp_dir)} && tar -xzf {shlex.quote(tmp_tar)} -C {shlex.quote(tmp_dir)} 2>/dev/null")
+    extract = wp.ssh(
+        f"mkdir -p {shlex.quote(tmp_dir)} && tar -xzf {shlex.quote(tmp_tar)} -C {shlex.quote(tmp_dir)} 2>/dev/null"
+        f" && echo OK || echo FAIL"
+    )
+    if "FAIL" in extract or "OK" not in extract:
+        err("Core tar extraction failed")
+        wp.ssh(f"rm -rf {shlex.quote(tmp_tar)} {shlex.quote(tmp_dir)}")
+        result.add("HIGH", "core-update-failed", f"tar extraction failed for WP {version}", "")
+        return False
 
     rsync = wp.ssh(
         f"rsync -a --delete"
@@ -145,9 +153,12 @@ def update_plugin(wp: WPConnection, slug: str, new_version: str, result: AuditRe
         result.add("MEDIUM", "plugin-update-failed", f"{slug}: download failed", "")
         return False
 
+    # Unzip to tmp first, then atomically swap so the live plugin dir is never
+    # absent — rm -rf before confirming unzip succeeds leaves the plugin deleted.
     out = wp.ssh(
-        f"rm -rf {shlex.quote(plugins_dir + '/' + slug)} 2>/dev/null"
+        f"rm -rf {shlex.quote(tmp_dir)} 2>/dev/null"
         f" && unzip -q {shlex.quote(tmp_zip)} -d {shlex.quote(tmp_dir)} 2>/dev/null"
+        f" && rm -rf {shlex.quote(plugins_dir + '/' + slug)}"
         f" && mv {shlex.quote(tmp_dir + '/' + slug)} {shlex.quote(plugins_dir + '/' + slug)}"
         f" && rm -rf {shlex.quote(tmp_zip)} {shlex.quote(tmp_dir)}"
         f" && echo OK || echo FAIL"
@@ -250,7 +261,7 @@ def main() -> None:
                     result.add("LOW", "plugin-outdated", f"{slug}: {installed_ver} → {latest_ver}", "")
 
                     if not args.check_only and not args.dry_run:
-                        if args.all or (args.plugins and slug in args.plugins.split(",")):
+                        if args.all or (args.plugins and slug in [s.strip() for s in args.plugins.split(",")]):
                             if update_plugin(wp, slug, latest_ver, result):
                                 updates_applied.append(f"{slug} → {latest_ver}")
                                 if not site_responds(wp):

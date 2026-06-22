@@ -161,8 +161,9 @@ def domain_c_database(wp: WPConnection, r: AuditResult) -> None:
     rm_count = wp.db(
         f"SELECT COUNT(*) FROM {p}rank_math_redirections;"
     )
-    if rm_count and rm_count.strip().isdigit() and int(rm_count.strip()) > 50:
-        warn(f"Rank Math has {rm_count.strip()} redirections — check for spam")
+    _rm_lines = [l.strip() for l in rm_count.splitlines() if l.strip().isdigit()]
+    if _rm_lines and int(_rm_lines[-1]) > 50:
+        warn(f"Rank Math has {_rm_lines[-1]} redirections — check for spam")
         r.add("MEDIUM", "rank-math-redirections", f"{rm_count.strip()} redirections", "")
 
     # Injected scripts in post meta

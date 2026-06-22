@@ -178,7 +178,7 @@ def run_scan(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
         # shell expansion of $_(POST|...) would silently break the grep match.
         hits = wp.ssh(
             f"WP_PAT={shlex.quote(pattern)} grep -rl --include='*.php' -E \"$WP_PAT\" "
-            f"'{wp.wp_path}' 2>/dev/null | grep -v '/node_modules/' | head -10"
+            f"{shlex.quote(wp.wp_path)} 2>/dev/null | grep -v '/node_modules/' | head -10"
         )
         if hits.strip():
             for path in hits.splitlines():
