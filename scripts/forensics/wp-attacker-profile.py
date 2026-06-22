@@ -20,9 +20,10 @@ Usage:
 
 import argparse
 import json
-import re
-import sys
 import os
+import re
+import shlex
+import sys
 from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -52,10 +53,9 @@ def _lookup_isp_from_map(ip: str, isp_map: dict) -> str:
 
 def _whois_lookup(wp: WPConnection, ip: str) -> str:
     """Do a whois lookup on the remote server (avoids local network restrictions)."""
-    import re
     if not re.match(r"^[\d.:a-fA-F]+$", ip):
         return "invalid IP"
-    result = wp.ssh(f"whois '{ip}' 2>/dev/null | grep -E 'OrgName|org-name|netname|descr|owner' | head -3")
+    result = wp.ssh(f"whois {shlex.quote(ip)} 2>/dev/null | grep -E 'OrgName|org-name|netname|descr|owner' | head -3")
     return result.strip()[:200] if result.strip() else "whois unavailable"
 
 

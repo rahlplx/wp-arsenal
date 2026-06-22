@@ -47,7 +47,9 @@ def add_connection_args(parser: argparse.ArgumentParser) -> None:
     g = parser.add_argument_group("Connection")
     g.add_argument("--host",    required=True,  help="SSH hostname (e.g. access-XXXXX.webspace-host.com)")
     g.add_argument("--user",    required=True,  help="SSH username")
-    g.add_argument("--password", required=True, help="SSH password")
+    g.add_argument("--password", required=False, default="", help="SSH password")
+    g.add_argument("--key-file", dest="key_file", default="",
+                   help="Path to SSH private key file (alternative to --password)")
     g.add_argument("--port",    type=int, default=22, help="SSH port (default: 22)")
     g.add_argument("--wp-path", required=True,  dest="wp_path",
                    help="Absolute path to WP root on the server (e.g. /var/www/html/yoursite)")
@@ -122,6 +124,7 @@ class WPConnection:
         self.host      = args.host
         self.user      = args.user
         self.password  = args.password
+        self.key_file  = getattr(args, "key_file", "")
         self.port      = getattr(args, "port", 22)
         self.wp_path   = args.wp_path.rstrip("/")
         self.db_host   = getattr(args, "db_host",   "")
@@ -142,10 +145,19 @@ class WPConnection:
         for attempt in range(1, retries + 1):
             try:
                 client = paramiko.SSHClient()
-                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                # Load ~/.ssh/known_hosts so keys for known hosts ARE verified.
+                # WarningPolicy covers hosts not yet in known_hosts — it logs a
+                # warning but still connects (compatible with diverse hosting envs).
+                try:
+                    client.load_system_host_keys()
+                except Exception:
+                    pass
+                client.set_missing_host_key_policy(paramiko.WarningPolicy())
                 client.connect(
                     self.host, port=self.port,
-                    username=self.user, password=self.password,
+                    username=self.user,
+                    password=self.password or None,
+                    key_filename=self.key_file or None,
                     timeout=30,
                     banner_timeout=30,
                     auth_timeout=30,
@@ -254,10 +266,16 @@ class WPConnection:
         # of -p so it never shows up in the remote `ps` output.
         import base64
         sql_b64 = base64.b64encode(sql.encode("utf-8")).decode("ascii")
-        pass_escaped = self.db_pass.replace("\\", "\\\\").replace("'", "'\\''")
+        # All credentials via env vars — shlex.quote handles every special char
+        # (backslash, single-quote, spaces) without manual escaping. POSIX sh
+        # single-quotes inside the bash -c string reference env vars safely.
         cmd = (
-            f"MYSQL_PWD='{pass_escaped}' bash -c '"
-            f"echo {sql_b64} | base64 -d | mysql -h \"{self.db_host}\" -u \"{self.db_user}\" \"{self.db_name}\"'"
+            f"MYSQL_PWD={shlex.quote(self.db_pass)} "
+            f"MYSQL_HOST={shlex.quote(self.db_host)} "
+            f"MYSQL_USER={shlex.quote(self.db_user)} "
+            f"MYSQL_DB={shlex.quote(self.db_name)} "
+            f"bash -c "
+            f"'echo {sql_b64} | base64 -d | mysql -h \"$MYSQL_HOST\" -u \"$MYSQL_USER\" \"$MYSQL_DB\"'"
             f" 2>/dev/null"
         )
         return self.ssh(cmd, timeout=timeout)
@@ -304,12 +322,12 @@ class WPConnection:
 
     def wp_exists(self, rel: str) -> bool:
         """Check if a file/dir exists relative to WP root."""
-        result = self.ssh(f"test -e '{self.wp(rel)}' && echo Y || echo N")
+        result = self.ssh(f"test -e {shlex.quote(self.wp(rel))} && echo Y || echo N")
         return result == "Y"
 
     def wp_readable(self, rel: str) -> bool:
         """Check if a file is readable relative to WP root."""
-        result = self.ssh(f"test -r '{self.wp(rel)}' && echo Y || echo N")
+        result = self.ssh(f"test -r {shlex.quote(self.wp(rel))} && echo Y || echo N")
         return result == "Y"
 
 

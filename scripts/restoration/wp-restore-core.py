@@ -15,8 +15,10 @@ Usage:
 
 import argparse
 import json
+import shlex
 import sys
 import os
+import uuid
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from wp_connect import (
@@ -37,7 +39,7 @@ def get_latest_wp_version(wp: WPConnection) -> str:
 
 def restore_core(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     result = AuditResult("wp-restore-core")
-    tmp_dir = "/tmp/wp-core-restore"
+    tmp_dir = f"/tmp/wp-core-restore-{uuid.uuid4().hex}"
 
     # ── Detect WP version ──────────────────────────────────────────────
     section("1. Determine WP version")
@@ -59,7 +61,7 @@ def restore_core(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
         info(f"[DRY-RUN] Would download {dl_url}")
         return result
 
-    prep = wp.ssh(f"mkdir -p '{tmp_dir}' && echo OK")
+    prep = wp.ssh(f"mkdir -p {shlex.quote(tmp_dir)} && echo OK")
     if "OK" not in prep:
         err(f"Cannot create temp directory {tmp_dir}")
         result.add("CRITICAL", "setup-failed", "Cannot create temp dir", tmp_dir)
@@ -67,7 +69,7 @@ def restore_core(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
 
     info(f"Downloading {dl_url}...")
     dl = wp.ssh(
-        f"wget -q -O '{tar_path}' '{dl_url}' 2>/dev/null && echo OK || echo FAIL",
+        f"wget -q -O {shlex.quote(tar_path)} {shlex.quote(dl_url)} 2>/dev/null && echo OK || echo FAIL",
         timeout=300
     )
     if "FAIL" in dl or "OK" not in dl:
@@ -79,7 +81,7 @@ def restore_core(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     # ── Extract ────────────────────────────────────────────────────────
     section("3. Extract")
     extract = wp.ssh(
-        f"tar -xzf '{tar_path}' -C '{tmp_dir}/' 2>/dev/null && echo OK || echo FAIL"
+        f"tar -xzf {shlex.quote(tar_path)} -C {shlex.quote(tmp_dir + '/')} 2>/dev/null && echo OK || echo FAIL"
     )
     if "FAIL" in extract or "OK" not in extract:
         err("Extract failed")
@@ -96,7 +98,7 @@ def restore_core(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
         f"--exclude='wp-content/' "
         f"--exclude='wp-config.php' "
         f"--exclude='wp-config-sample.php' "
-        f"'{src}' '{wp.wp_path}/' "
+        f"{shlex.quote(src)} {shlex.quote(wp.wp_path + '/')} "
         f"&& echo OK || echo FAIL"
     )
     sync = wp.ssh(rsync_cmd, timeout=300)
@@ -109,14 +111,14 @@ def restore_core(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
 
     # ── Fix permissions ────────────────────────────────────────────────
     section("5. Fix permissions")
-    wp.ssh(f"find '{wp.wp_path}' -type d -exec chmod 755 {{}} \\; 2>/dev/null")
-    wp.ssh(f"find '{wp.wp_path}' -name '*.php' -exec chmod 644 {{}} \\; 2>/dev/null")
-    wp.ssh(f"chmod 600 '{wp.wp('wp-config.php')}' 2>/dev/null")
+    wp.ssh(f"find {shlex.quote(wp.wp_path)} -type d -exec chmod 755 {{}} \\; 2>/dev/null")
+    wp.ssh(f"find {shlex.quote(wp.wp_path)} -name '*.php' -exec chmod 644 {{}} \\; 2>/dev/null")
+    wp.ssh(f"chmod 600 {shlex.quote(wp.wp('wp-config.php'))} 2>/dev/null")
     ok("Permissions fixed")
 
     # ── Cleanup ────────────────────────────────────────────────────────
     section("6. Cleanup temp files")
-    wp.ssh(f"rm -rf '{tmp_dir}'")
+    wp.ssh(f"rm -rf {shlex.quote(tmp_dir)}")
     ok("Temp files removed")
 
     result.stat("status", "success")

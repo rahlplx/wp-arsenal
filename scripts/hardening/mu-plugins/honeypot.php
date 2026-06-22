@@ -65,6 +65,7 @@ function _wp_arsenal_honeypot_triggered(): void {
     $from    = defined( 'WP_ARSENAL_ALERT_FROM' ) && WP_ARSENAL_ALERT_FROM
                ? WP_ARSENAL_ALERT_FROM
                : "security@{$domain}";
+    $from    = str_replace( [ "\r", "\n" ], '', $from );
 
     $body = "HONEYPOT TRIGGERED\n"
           . str_repeat( '=', 56 ) . "\n\n"
@@ -81,7 +82,7 @@ function _wp_arsenal_honeypot_triggered(): void {
         if ( $fp_data ) {
             $body .= "\nJS Fingerprint:\n";
             foreach ( $fp_data as $k => $v ) {
-                $body .= "  {$k}: {$v}\n";
+                $body .= "  {$k}: " . ( is_scalar( $v ) ? $v : json_encode( $v ) ) . "\n";
             }
         } else {
             $body .= "\nFingerprint (raw): {$fp}\n";

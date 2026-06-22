@@ -21,6 +21,7 @@ Usage:
 import argparse
 import json
 import os
+import shlex
 import sys
 import time
 
@@ -33,25 +34,37 @@ from wp_connect import (
 
 def backup_database(wp: WPConnection, backup_dir: str, label: str) -> str | None:
     """Create MySQL dump, return remote path or None on failure."""
+    raw_path = f"{backup_dir}/{label}-db.sql"
     dump_path = f"{backup_dir}/{label}-db.sql.gz"
     info(f"Dumping database to {dump_path}...")
 
-    pass_escaped = wp.db_pass.replace("'", "'\\''")
-    cmd = (
-        f"MYSQL_PWD='{pass_escaped}' mysqldump"
-        f" -h '{wp.db_host}'"
-        f" -u '{wp.db_user}'"
-        f" '{wp.db_name}'"
-        f" 2>/dev/null"
-        f" | gzip > '{dump_path}'"
-        f" && echo OK || echo FAIL"
+    # Dump to a raw SQL file first — a pipe only checks gzip's exit code, not mysqldump's.
+    dump_cmd = (
+        f"MYSQL_PWD={shlex.quote(wp.db_pass)} "
+        f"mysqldump"
+        f" -h {shlex.quote(wp.db_host)}"
+        f" -u {shlex.quote(wp.db_user)}"
+        f" {shlex.quote(wp.db_name)}"
+        f" > {shlex.quote(raw_path)}"
+        f" 2>/dev/null && echo OK || echo FAIL"
     )
-    result = wp.ssh(cmd, timeout=300)
-    if "FAIL" in result or "OK" not in result:
+    dump_result = wp.ssh(dump_cmd, timeout=300)
+    if "FAIL" in dump_result or "OK" not in dump_result:
         err("Database dump failed")
+        wp.ssh(f"rm -f {shlex.quote(raw_path)}")
         return None
 
-    size = wp.ssh(f"du -sh '{dump_path}' 2>/dev/null | cut -f1")
+    gzip_result = wp.ssh(
+        f"gzip -f {shlex.quote(raw_path)} && echo OK || echo FAIL"
+    )
+    if "FAIL" in gzip_result or "OK" not in gzip_result:
+        err("Database gzip failed")
+        # gzip -f may have already consumed raw_path and written a partial .gz;
+        # clean up both to avoid leaving a corrupt archive on disk.
+        wp.ssh(f"rm -f {shlex.quote(raw_path)} {shlex.quote(dump_path)}")
+        return None
+
+    size = wp.ssh(f"du -sh {shlex.quote(dump_path)} 2>/dev/null | cut -f1")
     ok(f"Database dump: {dump_path} ({size.strip()})")
     return dump_path
 
@@ -70,8 +83,8 @@ def backup_files(wp: WPConnection, backup_dir: str, label: str) -> str | None:
         " --exclude='*.log'"
     )
     cmd = (
-        f"tar -czf '{archive_path}' {exclude_flags}"
-        f" -C '{wp.wp_path}' wp-content"
+        f"tar -czf {shlex.quote(archive_path)} {exclude_flags}"
+        f" -C {shlex.quote(wp.wp_path)} wp-content"
         f" 2>/dev/null && echo OK || echo FAIL"
     )
     result = wp.ssh(cmd, timeout=600)
@@ -79,7 +92,7 @@ def backup_files(wp: WPConnection, backup_dir: str, label: str) -> str | None:
         err("File archive failed")
         return None
 
-    size = wp.ssh(f"du -sh '{archive_path}' 2>/dev/null | cut -f1")
+    size = wp.ssh(f"du -sh {shlex.quote(archive_path)} 2>/dev/null | cut -f1")
     ok(f"File archive: {archive_path} ({size.strip()})")
     return archive_path
 
@@ -88,7 +101,7 @@ def backup_config(wp: WPConnection, backup_dir: str, label: str) -> str | None:
     """Copy wp-config.php into backup dir."""
     config_src = wp.wp("wp-config.php")
     config_dst = f"{backup_dir}/{label}-wp-config.php"
-    result = wp.ssh(f"cp '{config_src}' '{config_dst}' && echo OK || echo FAIL")
+    result = wp.ssh(f"cp {shlex.quote(config_src)} {shlex.quote(config_dst)} && echo OK || echo FAIL")
     if "OK" in result:
         ok(f"wp-config.php backed up")
         return config_dst
@@ -99,21 +112,21 @@ def rotate_backups(wp: WPConnection, backup_dir: str, keep: int) -> None:
     """Delete oldest backups, keeping only `keep` sets."""
     # List all backup directories, sorted oldest first
     listing = wp.ssh(
-        f"ls -1dt '{backup_dir}'/wp-backup-* 2>/dev/null | tail -n +{keep + 1}"
+        f"ls -1dt {shlex.quote(backup_dir)}/wp-backup-* 2>/dev/null | tail -n +{keep + 1}"
     )
     if not listing.strip():
         return
     for old in listing.strip().splitlines():
         old = old.strip()
         if old:
-            wp.ssh(f"rm -rf '{old}' 2>/dev/null")
+            wp.ssh(f"rm -rf {shlex.quote(old)} 2>/dev/null")
             info(f"Rotated old backup: {old}")
 
 
 def download_backup(wp: WPConnection, remote_dir: str, local_dir: str, label: str) -> None:
     """Download all files from remote backup dir to local_dir."""
     os.makedirs(local_dir, exist_ok=True)
-    files = wp.ssh(f"ls '{remote_dir}/' 2>/dev/null").strip().splitlines()
+    files = wp.ssh(f"ls {shlex.quote(remote_dir + '/')} 2>/dev/null").strip().splitlines()
     for fname in files:
         fname = fname.strip()
         if not fname:
@@ -162,7 +175,7 @@ def main() -> None:
         section("Setup")
         if not wp.dry_run:
             setup = wp.ssh(
-                f"mkdir -p '{server_backup_dir}/{label}' && echo OK || echo FAIL"
+                f"mkdir -p {shlex.quote(server_backup_dir + '/' + label)} && echo OK || echo FAIL"
             )
             if "FAIL" in setup:
                 err(f"Cannot create backup dir: {server_backup_dir}")
@@ -214,7 +227,7 @@ def main() -> None:
 
         # Report backup size
         if not wp.dry_run:
-            total_size = wp.ssh(f"du -sh '{this_backup}' 2>/dev/null | cut -f1")
+            total_size = wp.ssh(f"du -sh {shlex.quote(this_backup)} 2>/dev/null | cut -f1")
             result.stat("backup_path", this_backup)
             result.stat("total_size", total_size.strip())
 

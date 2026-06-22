@@ -487,6 +487,155 @@ class TestSecurityFixes:
         )
 
 
+class TestKeyFileAndDbFixes:
+    """Tests for SSH key-file auth and db() credential quoting fixes."""
+
+    def test_key_file_passed_to_connect(self, mock_ssh_client):
+        """WPConnection.connect() must pass key_filename when key_file is set."""
+        from wp_connect import WPConnection
+        args = argparse.Namespace(
+            host="h", user="u", password="", key_file="/home/user/.ssh/id_rsa",
+            port=22, wp_path="/var/www", db_host="", db_user="",
+            db_pass="", db_name="", db_prefix="wp_",
+            dry_run=False, quiet=True,
+        )
+        wp = WPConnection(args)
+        wp.connect()
+        kwargs = mock_ssh_client.connect.call_args[1]
+        assert "key_filename" in kwargs, "connect() must pass key_filename kwarg"
+        assert kwargs["key_filename"] == "/home/user/.ssh/id_rsa"
+
+    def test_empty_key_file_passes_none_to_connect(self, mock_ssh_client, sample_args):
+        """When key_file is empty, key_filename=None must be passed (not empty string)."""
+        from wp_connect import WPConnection
+        wp = WPConnection(sample_args)
+        wp.connect()
+        kwargs = mock_ssh_client.connect.call_args[1]
+        assert kwargs.get("key_filename") is None, (
+            "key_filename must be None when key_file is empty — paramiko rejects empty string"
+        )
+
+    def test_warning_policy_used_not_auto_add(self, mock_ssh_client, sample_args):
+        """WPConnection must use WarningPolicy, not AutoAddPolicy (MITM risk)."""
+        import paramiko
+        from wp_connect import WPConnection
+        with patch("paramiko.WarningPolicy") as mock_warning:
+            with patch("paramiko.AutoAddPolicy") as mock_auto:
+                wp = WPConnection(sample_args)
+                wp.connect()
+                mock_warning.assert_called(), "WarningPolicy must be used"
+                mock_auto.assert_not_called(), "AutoAddPolicy must NOT be used"
+
+    def test_db_query_uses_env_vars_for_all_credentials(self, mock_ssh_client, sample_args):
+        """db() must pass db_host, db_user, db_name via env vars, not as shell arguments."""
+        from wp_connect import WPConnection
+        mock_ssh_client.exec_command.return_value = (
+            None, MockFileObject("result"), MockFileObject("")
+        )
+        wp = WPConnection(sample_args)
+        wp.connect()
+        wp.db("SELECT 1")
+        cmd = mock_ssh_client.exec_command.call_args[0][0]
+        assert "MYSQL_HOST=" in cmd, "db_host must be passed as MYSQL_HOST env var"
+        assert "MYSQL_USER=" in cmd, "db_user must be passed as MYSQL_USER env var"
+        assert "MYSQL_DB=" in cmd, "db_name must be passed as MYSQL_DB env var"
+        # Credentials must not appear as bare unquoted values in mysql args
+        assert sample_args.db_host not in cmd.split("bash")[1], (
+            "db_host must not appear literally in mysql command after bash -c"
+        )
+
+    def test_db_pass_backslash_not_doubled(self, mock_ssh_client):
+        """db() must not double backslashes in password — shlex.quote is used, not manual replace."""
+        from wp_connect import WPConnection
+        args = argparse.Namespace(
+            host="h", user="u", password="p", key_file="", port=22,
+            wp_path="/var/www", db_host="localhost",
+            db_user="u", db_pass="p@ss\\word",
+            db_name="db", db_prefix="wp_",
+            dry_run=False, quiet=True,
+        )
+        mock_ssh_client.exec_command.return_value = (
+            None, MockFileObject(""), MockFileObject("")
+        )
+        wp = WPConnection(args)
+        wp.connect()
+        wp.db("SELECT 1")
+        cmd = mock_ssh_client.exec_command.call_args[0][0]
+        assert "p@ss\\\\word" not in cmd, (
+            "db() must not double backslashes — POSIX sh single-quotes pass \\ literally"
+        )
+        assert "MYSQL_PWD=" in cmd
+
+    def test_wp_exists_uses_shlex_quote(self, mock_ssh_client, sample_args):
+        """wp_exists() must use shlex.quote — not single-quote wrapping — for the path."""
+        import shlex
+        from wp_connect import WPConnection
+        mock_ssh_client.exec_command.return_value = (
+            None, MockFileObject("Y"), MockFileObject("")
+        )
+        wp = WPConnection(sample_args)
+        wp.connect()
+        path_with_quote = "dir'name/file.php"
+        wp.wp_exists(path_with_quote)
+        cmd = mock_ssh_client.exec_command.call_args[0][0]
+        expected_quoted = shlex.quote(wp.wp(path_with_quote))
+        assert expected_quoted in cmd, (
+            f"wp_exists must use shlex.quote for paths — expected {expected_quoted!r} in cmd"
+        )
+
+
+class TestConfigLoaderFixes:
+    """Tests for config_loader.py fixes: key_file, trusted_cidrs normalization."""
+
+    def test_config_loader_loads_key_file(self, tmp_path):
+        """config_loader must read key_file from the ssh: block of config.yaml."""
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../scripts"))
+        from config_loader import load_config
+        cfg = tmp_path / "config.yaml"
+        cfg.write_text("ssh:\n  host: myhost\n  user: u\n  password: ''\n  key_file: /home/u/.ssh/id_rsa\nwordpress:\n  path: /var/www\n")
+        args = argparse.Namespace(
+            host="", user="", password="", key_file="", port=22,
+            wp_path="", db_host="", db_user="", db_pass="",
+            db_name="", db_prefix="wp_", dry_run=False, quiet=True, config=None,
+        )
+        args = load_config(args, config_path=str(cfg))
+        assert args.key_file == "/home/u/.ssh/id_rsa", (
+            f"key_file must be loaded from yaml ssh: block, got {args.key_file!r}"
+        )
+
+    def test_config_loader_trusted_cidrs_cli_string_normalized(self, tmp_path):
+        """CLI --trusted-cidrs string must win over config CIDRs and be normalized to a list."""
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../scripts"))
+        from config_loader import load_config
+        cfg = tmp_path / "config.yaml"
+        cfg.write_text("trusted_cidrs:\n  - 10.0.0.\n  - 172.16.\n")
+        args = argparse.Namespace(
+            host="", user="", password="", key_file="", port=22,
+            wp_path="", trusted_cidrs="192.168.1.,127.0.0.1",
+            blocked_cidrs="", db_host="", db_user="", db_pass="",
+            db_name="", db_prefix="wp_", dry_run=False, quiet=True, config=None,
+        )
+        args = load_config(args, config_path=str(cfg))
+        assert isinstance(args.trusted_cidrs, list), "trusted_cidrs must be a list after load_config"
+        assert "192.168.1." in args.trusted_cidrs, "CLI CIDRs must be in result"
+        assert "10.0.0." not in args.trusted_cidrs, "Config CIDRs must not override CLI CIDRs"
+
+    def test_config_loader_set_if_default_simplified(self):
+        """_set_if_default must set value when current is None/empty; skip when non-default."""
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../scripts"))
+        from config_loader import _set_if_default
+        ns = argparse.Namespace(host="", user="cli-user", port=22)
+        _set_if_default(ns, "host", "config-host")   # empty → should set
+        _set_if_default(ns, "user", "config-user")   # non-empty CLI value → must not overwrite
+        _set_if_default(ns, "port", 2222)             # 22 (default) → should set from config
+        assert ns.host == "config-host", "Empty attr must be filled from config"
+        assert ns.user == "cli-user", "Non-default CLI value must not be overwritten"
+        assert ns.port == 2222, "Port 22 (default) must be overridable from config"
+
+
 class TestSecurityFixesBehavioral:
     """Behavioral tests for coverage gaps identified in vibe-review Stage 5."""
 
@@ -579,4 +728,141 @@ class TestSecurityFixesBehavioral:
         source = inspect.getsource(mod)
         assert "shlex" in source, (
             "wp-forensics.py grep patterns must use shlex.quote — same $_ expansion bug as wp-scan.py"
+        )
+
+
+class TestCodeReviewFixes:
+    """Tests for bugs found and fixed in the /code-review pass."""
+
+    # ── PHP string escaping ───────────────────────────────────────────────────
+
+    def test_php_str_escapes_single_quote(self, mock_ssh_client):
+        """_php_str must escape single quotes so they don't break PHP string literals."""
+        mod = _import_script("restoration/wp-plugin-restore.py")
+        assert hasattr(mod, "_php_str"), "_php_str helper must exist"
+        result = mod._php_str("it's-plugin")
+        # Raw unescaped ' must not appear — only \' is acceptable
+        assert result == "it\\'s-plugin", (
+            f"_php_str must replace ' with \\', got: {result!r}"
+        )
+
+    def test_php_str_escapes_backslash(self, mock_ssh_client):
+        """_php_str must escape backslashes before escaping quotes (order matters)."""
+        mod = _import_script("restoration/wp-plugin-restore.py")
+        result = mod._php_str("C:\\path\\to")
+        assert result == "C:\\\\path\\\\to", (
+            f"_php_str must double backslashes, got: {result!r}"
+        )
+
+    def test_php_str_no_op_on_safe_value(self, mock_ssh_client):
+        """_php_str must leave paths without quotes or backslashes unchanged."""
+        mod = _import_script("restoration/wp-plugin-restore.py")
+        safe = "rank-math/rank-math.php"
+        assert mod._php_str(safe) == safe
+
+    # ── Slug validation ───────────────────────────────────────────────────────
+
+    def test_validate_slug_accepts_valid_slugs(self, mock_ssh_client):
+        """_validate_slug must accept normal WordPress plugin slugs."""
+        mod = _import_script("restoration/wp-plugin-restore.py")
+        for slug in ["elementor", "rank-math", "woocommerce", "my_plugin.v2"]:
+            assert mod._validate_slug(slug) == slug
+
+    def test_validate_slug_rejects_path_traversal(self, mock_ssh_client):
+        """_validate_slug must reject slugs containing ../"""
+        import pytest as _pytest
+        mod = _import_script("restoration/wp-plugin-restore.py")
+        with _pytest.raises(ValueError):
+            mod._validate_slug("../../etc/passwd")
+
+    def test_validate_slug_rejects_spaces(self, mock_ssh_client):
+        """_validate_slug must reject slugs with spaces."""
+        import pytest as _pytest
+        mod = _import_script("restoration/wp-plugin-restore.py")
+        with _pytest.raises(ValueError):
+            mod._validate_slug("my plugin")
+
+    def test_validate_slug_rejects_shell_special(self, mock_ssh_client):
+        """_validate_slug must reject slugs with shell metacharacters."""
+        import pytest as _pytest
+        mod = _import_script("restoration/wp-plugin-restore.py")
+        for bad in ["plug$(cmd)", "plug;rm", "plug`id`"]:
+            with _pytest.raises(ValueError):
+                mod._validate_slug(bad)
+
+    # ── LOCATE instead of LIKE ────────────────────────────────────────────────
+
+    def test_activate_plugin_uses_locate_not_like(self, mock_ssh_client):
+        """activate_plugin must use LOCATE() not LIKE to avoid wildcard mismatches on _ and %."""
+        import inspect
+        mod = _import_script("restoration/wp-plugin-restore.py")
+        source = inspect.getsource(mod.activate_plugin)
+        assert "LOCATE(" in source, "activate_plugin must use LOCATE() for active_plugins check"
+        assert " LIKE " not in source, "activate_plugin must NOT use LIKE (wildcards _ and % break plugin paths)"
+
+    # ── Probe in /tmp not docroot ─────────────────────────────────────────────
+
+    def test_activate_probe_written_to_tmp_not_docroot(self, mock_ssh_client):
+        """activate_plugin probe must be written to /tmp, not wp-content (web-accessible)."""
+        import inspect
+        mod = _import_script("restoration/wp-plugin-restore.py")
+        source = inspect.getsource(mod.activate_plugin)
+        assert "/tmp/" in source, "probe must go to /tmp to avoid web exposure"
+        assert "wp-content/activate-probe" not in source, (
+            "probe must NOT be placed in wp-content — it becomes publicly accessible"
+        )
+
+    # ── Flat-zip fix ──────────────────────────────────────────────────────────
+
+    def test_restore_from_wporg_uses_named_dir_not_glob(self, mock_ssh_client):
+        """restore_from_wporg must mv canonical/ by name, not mv */, to handle flat zips."""
+        import inspect
+        mod = _import_script("restoration/wp-plugin-restore.py")
+        source = inspect.getsource(mod.restore_from_wporg)
+        # The glob pattern tmp_dir/* should NOT appear — we use the named subdir instead
+        assert "tmp_dir}/*" not in source and "tmp_dir + '/')*" not in source, (
+            "restore_from_wporg must not use glob mv */; use named canonical/ directory instead"
+        )
+
+    # ── config_loader: _normalize_cidr_list helper ────────────────────────────
+
+    def test_normalize_cidr_list_splits_comma_string(self):
+        """_normalize_cidr_list must split CLI comma-string into list."""
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../scripts"))
+        from config_loader import _normalize_cidr_list
+        result = _normalize_cidr_list("192.168.1., 10.0.0., 127.0.0.1")
+        assert result == ["192.168.1.", "10.0.0.", "127.0.0.1"]
+
+    def test_normalize_cidr_list_passes_through_list(self):
+        """_normalize_cidr_list must return a list unchanged."""
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../scripts"))
+        from config_loader import _normalize_cidr_list
+        lst = ["10.0.", "172.16."]
+        assert _normalize_cidr_list(lst) == lst
+
+    def test_normalize_cidr_list_none_returns_empty(self):
+        """_normalize_cidr_list(None) must return []."""
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../scripts"))
+        from config_loader import _normalize_cidr_list
+        assert _normalize_cidr_list(None) == []
+
+    def test_normalize_cidr_list_empty_string_returns_empty(self):
+        """_normalize_cidr_list('') must return []."""
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../scripts"))
+        from config_loader import _normalize_cidr_list
+        assert _normalize_cidr_list("") == []
+
+    # ── known_hosts loaded ────────────────────────────────────────────────────
+
+    def test_connect_loads_system_host_keys(self, mock_ssh_client, sample_args):
+        """connect() must call load_system_host_keys() so known hosts are verified."""
+        from wp_connect import WPConnection
+        wp = WPConnection(sample_args)
+        wp.connect()
+        mock_ssh_client.load_system_host_keys.assert_called(), (
+            "load_system_host_keys() must be called so known hosts are actually verified"
         )

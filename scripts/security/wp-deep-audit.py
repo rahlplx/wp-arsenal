@@ -53,7 +53,7 @@ def domain_a_filesystem(wp: WPConnection, r: AuditResult) -> None:
 
     # Hidden files in WP root
     hidden = wp.ssh(
-        f"find '{wp.wp_path}' -maxdepth 2 -name '.*' "
+        f"find {shlex.quote(wp.wp_path)} -maxdepth 2 -name '.*' "
         f"-not -name '.htaccess' -not -name '.git' 2>/dev/null"
     )
     for path in [p.strip() for p in hidden.splitlines() if p.strip()]:
@@ -62,7 +62,7 @@ def domain_a_filesystem(wp: WPConnection, r: AuditResult) -> None:
 
     # PHP files modified last 14 days
     recent = wp.ssh(
-        f"find '{wp.wp_path}' -name '*.php' -mtime -14 "
+        f"find {shlex.quote(wp.wp_path)} -name '*.php' -mtime -14 "
         f"-not -path '*/node_modules/*' 2>/dev/null | head -50"
     )
     recent_list = [p.strip() for p in recent.splitlines() if p.strip()]
@@ -74,7 +74,7 @@ def domain_a_filesystem(wp: WPConnection, r: AuditResult) -> None:
 
     # PHP in uploads
     uploads_php = wp.ssh(
-        f"find '{wp.wp('wp-content/uploads')}' -name '*.php' 2>/dev/null"
+        f"find {shlex.quote(wp.wp('wp-content/uploads'))} -name '*.php' 2>/dev/null"
     )
     for path in [p.strip() for p in uploads_php.splitlines() if p.strip()]:
         err(f"PHP in uploads: {path}")
@@ -82,7 +82,7 @@ def domain_a_filesystem(wp: WPConnection, r: AuditResult) -> None:
 
     # World-writable files
     ww = wp.ssh(
-        f"find '{wp.wp_path}' -perm -o+w -not -path '*/.git/*' 2>/dev/null | head -20"
+        f"find {shlex.quote(wp.wp_path)} -perm -o+w -not -path '*/.git/*' 2>/dev/null | head -20"
     )
     for path in [p.strip() for p in ww.splitlines() if p.strip()]:
         err(f"World-writable: {path}")
@@ -161,8 +161,9 @@ def domain_c_database(wp: WPConnection, r: AuditResult) -> None:
     rm_count = wp.db(
         f"SELECT COUNT(*) FROM {p}rank_math_redirections;"
     )
-    if rm_count and rm_count.strip().isdigit() and int(rm_count.strip()) > 50:
-        warn(f"Rank Math has {rm_count.strip()} redirections — check for spam")
+    _rm_lines = [l.strip() for l in rm_count.splitlines() if l.strip().isdigit()]
+    if _rm_lines and int(_rm_lines[-1]) > 50:
+        warn(f"Rank Math has {_rm_lines[-1]} redirections — check for spam")
         r.add("MEDIUM", "rank-math-redirections", f"{rm_count.strip()} redirections", "")
 
     # Injected scripts in post meta
@@ -211,7 +212,7 @@ def domain_d_wpconfig(wp: WPConnection, r: AuditResult) -> None:
     # WP debug log
     debug_log = wp.wp("wp-content/debug.log")
     if wp.wp_exists("wp-content/debug.log"):
-        size = wp.ssh(f"stat -c '%s' '{debug_log}' 2>/dev/null")
+        size = wp.ssh(f"stat -c '%s' {shlex.quote(debug_log)} 2>/dev/null")
         warn(f"debug.log exists ({size} bytes) — publicly accessible")
         r.add("MEDIUM", "debug-log", "WP debug log is publicly accessible", debug_log)
 
@@ -223,7 +224,7 @@ def domain_e_plugins(wp: WPConnection, r: AuditResult) -> None:
     section("DOMAIN E — Plugins & Themes")
 
     # All installed plugins
-    plugins = wp.ssh(f"ls -1 '{wp.wp('wp-content/plugins')}/' 2>/dev/null")
+    plugins = wp.ssh(f"ls -1 {shlex.quote(wp.wp('wp-content/plugins') + '/')} 2>/dev/null")
     plugin_list = [p.strip() for p in plugins.splitlines() if p.strip() and p.strip() not in (".","..",".htaccess","index.php")]
     r.stat("plugin_count", len(plugin_list))
     info(f"Installed plugins ({len(plugin_list)}): {', '.join(plugin_list)}")
@@ -233,7 +234,7 @@ def domain_e_plugins(wp: WPConnection, r: AuditResult) -> None:
         plugin_path = wp.wp(f"wp-content/plugins/{plugin}")
         hits = wp.ssh(
             f"grep -rl --include='*.php' -E 'eval\\s*\\(\\s*base64_decode|eval\\s*\\(\\s*gzinflate' "
-            f"'{plugin_path}' 2>/dev/null | head -3"
+            f"{shlex.quote(plugin_path)} 2>/dev/null | head -3"
         )
         if hits.strip():
             err(f"Obfuscated PHP in plugin: {plugin}")
@@ -244,7 +245,8 @@ def domain_e_plugins(wp: WPConnection, r: AuditResult) -> None:
     kadence_path = wp.wp("wp-content/themes/kadence")
     if wp.wp_exists("wp-content/themes/kadence"):
         unexpected = wp.ssh(
-            f"find '{kadence_path}' -name '*.php' -newer '{kadence_path}/style.css' "
+            f"find {shlex.quote(kadence_path)} -name '*.php' "
+            f"-newer {shlex.quote(kadence_path + '/style.css')} "
             f"-mtime -30 2>/dev/null | head -10"
         )
         if unexpected.strip():
@@ -319,7 +321,8 @@ def domain_g_network(wp: WPConnection, r: AuditResult) -> None:
     # SSL cert expiry
     domain = wp.site_url.replace("https://","").replace("http://","").split("/")[0]
     cert_expiry = wp.ssh(
-        f"echo | openssl s_client -servername '{domain}' -connect '{domain}:443' 2>/dev/null "
+        f"echo | openssl s_client -servername {shlex.quote(domain)} "
+        f"-connect {shlex.quote(domain + ':443')} 2>/dev/null "
         f"| openssl x509 -noout -enddate 2>/dev/null"
     )
     info(f"SSL cert expiry: {cert_expiry}")
@@ -338,10 +341,10 @@ def domain_h_logs(wp: WPConnection, r: AuditResult) -> None:
         f"{wp.wp_path}/../logs/access.log",
     ]
     for log_path in access_log_paths:
-        exists = wp.ssh(f"test -f '{log_path}' && echo Y || echo N")
+        exists = wp.ssh(f"test -f {shlex.quote(log_path)} && echo Y || echo N")
         if exists == "Y":
             post_hits = wp.ssh(
-                f"grep 'POST.*\\.php' '{log_path}' 2>/dev/null | tail -20"
+                f"grep 'POST.*\\.php' {shlex.quote(log_path)} 2>/dev/null | tail -20"
             )
             if post_hits.strip():
                 info(f"Recent POST to PHP (from {log_path}):\n{post_hits[:500]}")

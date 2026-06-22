@@ -21,8 +21,10 @@ Usage:
 
 import argparse
 import json
-import sys
 import os
+import re
+import shlex
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from wp_connect import (
@@ -66,12 +68,11 @@ def audit_db(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
         f"SELECT option_value FROM {p}options WHERE option_name='active_plugins';"
     )
     # Extract plugin paths from serialized PHP
-    import re
     plugin_paths = re.findall(r'"([^"]+/[^"]+\.php)"', plugins_raw)
     missing_plugins = []
     for rel_path in plugin_paths:
         full_path = wp.wp(f"wp-content/plugins/{rel_path}")
-        exists = wp.ssh(f"test -f '{full_path}' && echo Y || echo N")
+        exists = wp.ssh(f"test -f {shlex.quote(full_path)} && echo Y || echo N")
         if exists != "Y":
             err(f"Active plugin missing from filesystem: {rel_path}")
             result.add("HIGH", "plugin-file-missing", rel_path, full_path)

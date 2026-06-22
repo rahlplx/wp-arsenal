@@ -18,6 +18,7 @@ Usage:
 
 import argparse
 import json
+import shlex
 import sys
 import os
 
@@ -35,7 +36,7 @@ def fix_permissions(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     # ── A. World-writable files (immediate risk) ───────────────────────
     section("A. World-writable files")
     world_writable = wp.ssh(
-        f"find '{wp.wp_path}' -perm -o+w -not -path '*/.git/*' 2>/dev/null | head -50"
+        f"find {shlex.quote(wp.wp_path)} -perm -o+w -not -path '*/.git/*' 2>/dev/null | head -50"
     )
     ww_list = [p.strip() for p in world_writable.splitlines() if p.strip()]
     if ww_list:
@@ -43,7 +44,7 @@ def fix_permissions(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
             err(f"World-writable: {path}")
             result.add("HIGH", "world-writable", "World-writable file", path)
             if not wp.dry_run:
-                wp.ssh(f"chmod o-w '{path}'")
+                wp.ssh(f"chmod o-w {shlex.quote(path)}")
                 fixed += 1
     else:
         ok("No world-writable files")
@@ -51,7 +52,7 @@ def fix_permissions(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     # ── B. Executable PHP files ────────────────────────────────────────
     section("B. PHP files with execute bit set")
     exec_php = wp.ssh(
-        f"find '{wp.wp_path}' -name '*.php' -perm /u+x,g+x,o+x 2>/dev/null | head -30"
+        f"find {shlex.quote(wp.wp_path)} -name '*.php' -perm /u+x,g+x,o+x 2>/dev/null | head -30"
     )
     exec_list = [p.strip() for p in exec_php.splitlines() if p.strip()]
     if exec_list:
@@ -59,7 +60,7 @@ def fix_permissions(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
             warn(f"PHP with exec bit: {path}")
             result.add("MEDIUM", "php-executable", "PHP file has execute bit", path)
             if not wp.dry_run:
-                wp.ssh(f"chmod a-x '{path}'")
+                wp.ssh(f"chmod a-x {shlex.quote(path)}")
                 fixed += 1
     else:
         ok("No PHP files with execute bit")
@@ -68,11 +69,11 @@ def fix_permissions(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     section("C. Fix directory permissions → 755")
     if wp.dry_run:
         count = wp.ssh(
-            f"find '{wp.wp_path}' -type d -not -perm 755 2>/dev/null | wc -l"
+            f"find {shlex.quote(wp.wp_path)} -type d -not -perm 755 2>/dev/null | wc -l"
         ).strip()
         info(f"[DRY-RUN] Would fix ~{count} directories → chmod 755")
     else:
-        wp.ssh(f"find '{wp.wp_path}' -type d -exec chmod 755 {{}} \\; 2>/dev/null")
+        wp.ssh(f"find {shlex.quote(wp.wp_path)} -type d -exec chmod 755 {{}} \\; 2>/dev/null")
         ok("All directories set to 755")
         fixed += 1
 
@@ -80,12 +81,12 @@ def fix_permissions(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     section("D. Fix PHP file permissions → 644")
     if wp.dry_run:
         count = wp.ssh(
-            f"find '{wp.wp_path}' -name '*.php' -not -perm 644 2>/dev/null | wc -l"
+            f"find {shlex.quote(wp.wp_path)} -name '*.php' -not -perm 644 2>/dev/null | wc -l"
         ).strip()
         info(f"[DRY-RUN] Would fix ~{count} PHP files → chmod 644")
     else:
         wp.ssh(
-            f"find '{wp.wp_path}' -name '*.php' -exec chmod 644 {{}} \\; 2>/dev/null"
+            f"find {shlex.quote(wp.wp_path)} -name '*.php' -exec chmod 644 {{}} \\; 2>/dev/null"
         )
         ok("All PHP files set to 644")
         fixed += 1
@@ -97,7 +98,7 @@ def fix_permissions(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
         if wp.dry_run:
             info(f"[DRY-RUN] Would chmod 600 {wp_config}")
         else:
-            wp.ssh(f"chmod 600 '{wp_config}'")
+            wp.ssh(f"chmod 600 {shlex.quote(wp_config)}")
             ok(f"wp-config.php locked to 600")
             fixed += 1
     else:
@@ -109,7 +110,7 @@ def fix_permissions(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
         info("[DRY-RUN] Would fix non-PHP file permissions in wp-content/")
     else:
         wp.ssh(
-            f"find '{wp.wp('wp-content')}' -type f -not -name '*.php' "
+            f"find {shlex.quote(wp.wp('wp-content'))} -type f -not -name '*.php' "
             f"-exec chmod 644 {{}} \\; 2>/dev/null"
         )
         ok("Non-PHP files in wp-content/ set to 644")
@@ -117,12 +118,14 @@ def fix_permissions(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
 
     # ── G. Verify .htaccess permissions ───────────────────────────────
     section("G. .htaccess → 644")
-    ht_perm = wp.ssh(f"stat -c '%a' '{wp.wp('.htaccess')}' 2>/dev/null")
+    ht_perm = wp.ssh(f"stat -c '%a' {shlex.quote(wp.wp('.htaccess'))} 2>/dev/null")
     if ht_perm and ht_perm != "644":
         if not wp.dry_run:
-            wp.ssh(f"chmod 644 '{wp.wp('.htaccess')}'")
-        ok(".htaccess set to 644")
-        fixed += 1
+            wp.ssh(f"chmod 644 {shlex.quote(wp.wp('.htaccess'))}")
+            ok(".htaccess set to 644")
+            fixed += 1
+        else:
+            info("[DRY-RUN] Would chmod 644 .htaccess")
     elif ht_perm == "644":
         ok(".htaccess already 644")
 

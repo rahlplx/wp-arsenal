@@ -108,7 +108,7 @@ def run_scan(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
 
     # ── A. Non-standard root files ──────────────────────────────────────
     section("A. WP Root — unexpected files")
-    root_files = wp.ssh(f"ls -1a '{wp.wp_path}/' 2>/dev/null")
+    root_files = wp.ssh(f"ls -1a {shlex.quote(wp.wp_path + '/')} 2>/dev/null")
     rogue_root = []
     for f in root_files.splitlines():
         f = f.strip()
@@ -126,22 +126,27 @@ def run_scan(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     # ── B. Known bad filenames ──────────────────────────────────────────
     section("B. Known attacker filenames")
     found_bad = []
-    for fname in KNOWN_BAD_FILENAMES:
-        hit = wp.ssh(
-            f"find '{wp.wp_path}' -name '{fname}' -not -path '*/node_modules/*' 2>/dev/null"
-        )
-        if hit:
-            for path in hit.splitlines():
-                err(f"Known malware file: {path.strip()}")
-                result.add("CRITICAL", "known-bad-file", fname, path.strip())
-                found_bad.append(path.strip())
+    # Single find with OR predicates instead of 26 separate SSH round-trips
+    name_clauses = " -o ".join(f"-name {shlex.quote(f)}" for f in KNOWN_BAD_FILENAMES)
+    hits_raw = wp.ssh(
+        f"find {shlex.quote(wp.wp_path)} \\( {name_clauses} \\) "
+        f"-not -path '*/node_modules/*' 2>/dev/null"
+    )
+    if hits_raw.strip():
+        for path in hits_raw.splitlines():
+            path = path.strip()
+            if path:
+                fname = os.path.basename(path)
+                err(f"Known malware file: {path}")
+                result.add("CRITICAL", "known-bad-file", fname, path)
+                found_bad.append(path)
     if not found_bad:
         ok("No known bad filenames found")
 
     # ── C. PHP in uploads ──────────────────────────────────────────────
     section("C. PHP files in uploads/")
     uploads_php = wp.ssh(
-        f"find '{wp.wp('wp-content/uploads')}' -name '*.php' 2>/dev/null | head -30"
+        f"find {shlex.quote(wp.wp('wp-content/uploads'))} -name '*.php' 2>/dev/null | head -30"
     )
     if uploads_php.strip():
         for path in uploads_php.splitlines():
@@ -153,7 +158,8 @@ def run_scan(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     # ── D. PHP files modified in last 14 days ──────────────────────────
     section("D. Recently modified PHP files (14 days)")
     recent = wp.ssh(
-        f"find '{wp.wp_path}' -name '*.php' -newer '{wp.wp_path}/wp-login.php' "
+        f"find {shlex.quote(wp.wp_path)} -name '*.php' "
+        f"-newer {shlex.quote(wp.wp_path + '/wp-login.php')} "
         f"-not -path '*/node_modules/*' -mtime -14 2>/dev/null | head -50"
     )
     if recent.strip():
@@ -172,7 +178,7 @@ def run_scan(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
         # shell expansion of $_(POST|...) would silently break the grep match.
         hits = wp.ssh(
             f"WP_PAT={shlex.quote(pattern)} grep -rl --include='*.php' -E \"$WP_PAT\" "
-            f"'{wp.wp_path}' 2>/dev/null | grep -v '/node_modules/' | head -10"
+            f"{shlex.quote(wp.wp_path)} 2>/dev/null | grep -v '/node_modules/' | head -10"
         )
         if hits.strip():
             for path in hits.splitlines():
@@ -211,7 +217,7 @@ def run_scan(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     # ── H. Hidden files ────────────────────────────────────────────────
     section("H. Hidden files in WP root")
     hidden = wp.ssh(
-        f"find '{wp.wp_path}' -maxdepth 2 -name '.*' -not -name '.htaccess' "
+        f"find {shlex.quote(wp.wp_path)} -maxdepth 2 -name '.*' -not -name '.htaccess' "
         f"-not -name '.git' 2>/dev/null"
     )
     if hidden.strip():

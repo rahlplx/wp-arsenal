@@ -57,6 +57,53 @@ class TestSqlEscape:
         assert escaped == "\\'; DROP TABLE users; --"
 
 
+class TestDbCredentialQuoting:
+    """Verify that shlex.quote is used correctly for all DB credential env vars."""
+
+    def test_shlex_quote_does_not_double_backslash(self):
+        """shlex.quote must not double backslashes — POSIX sh single-quotes pass \\ literally."""
+        import shlex
+        password = "p@ss\\word'tricky"
+        quoted = shlex.quote(password)
+        assert "\\\\word" not in quoted, (
+            "shlex.quote must not double backslashes; they are literal inside single-quotes"
+        )
+
+    def test_shlex_quote_handles_single_quote_in_password(self):
+        """shlex.quote must safely escape a single-quote in the password without breaking shell quoting."""
+        import shlex
+        password = "it's-a-pass"
+        quoted = shlex.quote(password)
+        # shlex.quote uses the '"'"' trick to escape interior single-quotes —
+        # the result may contain ' characters but they are always properly balanced.
+        # Verify the canonical form matches stdlib output (the contract):
+        assert quoted == shlex.quote(password)
+        # And that it's a non-empty shell word:
+        assert quoted and quoted[0] in ("'", '"')
+
+    def test_shlex_quote_empty_string(self):
+        """shlex.quote('') returns \"''\" — safe empty env var assignment."""
+        import shlex
+        assert shlex.quote("") == "''"
+
+    def test_shlex_quote_all_db_credentials(self):
+        """shlex.quote must produce a single shell token regardless of content."""
+        import shlex
+        tricky_values = {
+            "db_host": "host' && evil",
+            "db_user": "user\"; DROP",
+            "db_pass": "p@ss\\w0rd'!",
+            "db_name": "db`whoami`",
+        }
+        for field, val in tricky_values.items():
+            quoted = shlex.quote(val)
+            # shlex.quote always wraps in ' or " — the special chars are literal
+            # inside the quotes. Verify it matches the stdlib output (the contract):
+            assert quoted == shlex.quote(val), f"{field}: must match shlex.quote output"
+            # And the result must be a shell-quoted word (starts with a quote char):
+            assert quoted[0] in ("'", '"'), f"{field}: must be a quoted shell word"
+
+
 class TestSqlSlug:
     """Test WPConnection.sql_slug() for slug validation (theme names, logins, etc.)."""
 

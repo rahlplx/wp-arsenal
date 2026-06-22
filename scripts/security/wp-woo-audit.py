@@ -15,6 +15,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -146,7 +147,7 @@ def run_audit(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     section("F. WooCommerce logs")
     log_dir = wp.wp("wp-content/uploads/wc-logs")
     if wp.wp_exists("wp-content/uploads/wc-logs"):
-        listing = wp.ssh(f"ls -la '{log_dir}' 2>/dev/null | head -20")
+        listing = wp.ssh(f"ls -la {shlex.quote(log_dir)} 2>/dev/null | head -20")
         log_count = len([l for l in listing.splitlines() if l.endswith(".log")])
         result.stat("wc_log_files", log_count)
         index_exists = wp.wp_exists("wp-content/uploads/wc-logs/.htaccess") or \

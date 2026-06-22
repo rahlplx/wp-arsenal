@@ -25,6 +25,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -37,7 +38,7 @@ from wp_connect import (
 def is_network_install(wp: WPConnection) -> bool:
     """Check if MULTISITE constant is set in wp-config.php."""
     out = wp.ssh(
-        f"grep -E \"define.*MULTISITE.*true\" '{wp.wp_path}/wp-config.php' 2>/dev/null"
+        f"grep -E \"define.*MULTISITE.*true\" {shlex.quote(wp.wp_path + '/wp-config.php')} 2>/dev/null"
     )
     return bool(out.strip())
 

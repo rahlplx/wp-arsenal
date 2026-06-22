@@ -26,6 +26,7 @@ Usage:
 import argparse
 import json
 import os
+import shlex
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -57,7 +58,7 @@ def get_theme_display_name(wp: WPConnection, slug: str) -> str:
     """Read Theme Name from theme's style.css."""
     style_css = wp.wp(f"wp-content/themes/{slug}/style.css")
     out = wp.ssh(
-        f"grep -m 1 '^Theme Name:' '{style_css}' 2>/dev/null"
+        f"grep -m 1 '^Theme Name:' {shlex.quote(style_css)} 2>/dev/null"
     )
     return out.strip().replace("Theme Name:", "").strip() if out.strip() else slug
 
@@ -132,7 +133,7 @@ def list_themes(wp: WPConnection) -> None:
     current = get_current_theme(wp)
     active_slug = current.get("template", "")
     out = wp.ssh(
-        f"ls -1 '{wp.wp('wp-content/themes')}' 2>/dev/null"
+        f"ls -1 {shlex.quote(wp.wp('wp-content/themes'))} 2>/dev/null"
     )
     themes = sorted(t.strip() for t in out.splitlines() if t.strip())
     info(f"\n{'Slug':35} {'Display Name':30} {'Status'}")

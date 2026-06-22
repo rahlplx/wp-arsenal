@@ -14,6 +14,7 @@ Usage:
 
 import argparse
 import json
+import shlex
 import sys
 import os
 
@@ -50,41 +51,41 @@ ROGUE_PLUGINS = [
 def nuke(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     result = AuditResult("wp-shell-nuke")
     deleted = 0
-    skipped = 0
 
     # ── A. Search and delete known-bad filenames ───────────────────────
     section("A. Remove known-bad filenames")
-    for fname in KNOWN_BAD_FILES:
-        hits = wp.ssh(
-            f"find '{wp.wp_path}' -name '{fname}' "
-            f"-not -path '*/node_modules/*' 2>/dev/null"
-        )
-        for path in [p.strip() for p in hits.splitlines() if p.strip()]:
-            if wp.dry_run:
-                warn(f"[DRY-RUN] Would delete: {path}")
-                result.add("INFO", "would-delete", fname, path)
+    name_clauses = " -o ".join(f"-name {shlex.quote(f)}" for f in KNOWN_BAD_FILES)
+    hits_raw = wp.ssh(
+        f"find {shlex.quote(wp.wp_path)} \\( {name_clauses} \\) "
+        f"-not -path '*/node_modules/*' 2>/dev/null"
+    )
+    for path in [p.strip() for p in hits_raw.splitlines() if p.strip()]:
+        fname = os.path.basename(path)
+        if wp.dry_run:
+            warn(f"[DRY-RUN] Would delete: {path}")
+            result.add("INFO", "would-delete", fname, path)
+        else:
+            out = wp.ssh(f"rm -f {shlex.quote(path)} && echo DELETED || echo FAILED")
+            if "DELETED" in out:
+                ok(f"Deleted: {path}")
+                result.add("INFO", "deleted", fname, path)
+                deleted += 1
             else:
-                out = wp.ssh(f"rm -f '{path}' && echo DELETED || echo FAILED")
-                if "DELETED" in out:
-                    ok(f"Deleted: {path}")
-                    result.add("INFO", "deleted", fname, path)
-                    deleted += 1
-                else:
-                    err(f"Failed to delete: {path}")
-                    result.add("HIGH", "delete-failed", fname, path)
+                err(f"Failed to delete: {path}")
+                result.add("HIGH", "delete-failed", fname, path)
 
     # ── B. Remove PHP files from uploads/ ──────────────────────────────
     section("B. Remove PHP files from uploads/")
     uploads_path = wp.wp("wp-content/uploads")
     php_in_uploads = wp.ssh(
-        f"find '{uploads_path}' -name '*.php' 2>/dev/null"
+        f"find {shlex.quote(uploads_path)} -name '*.php' 2>/dev/null"
     )
     for path in [p.strip() for p in php_in_uploads.splitlines() if p.strip()]:
         if wp.dry_run:
             warn(f"[DRY-RUN] Would delete PHP from uploads: {path}")
             result.add("INFO", "would-delete-upload-php", "php-in-uploads", path)
         else:
-            out = wp.ssh(f"rm -f '{path}' && echo DELETED || echo FAILED")
+            out = wp.ssh(f"rm -f {shlex.quote(path)} && echo DELETED || echo FAILED")
             if "DELETED" in out:
                 ok(f"Deleted upload PHP: {path}")
                 result.add("INFO", "deleted-upload-php", "php-in-uploads", path)
@@ -100,6 +101,8 @@ def nuke(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     existing = wp.sftp_read(ht_path)
     if b"deny from all" in existing:
         ok("uploads/.htaccess already blocks PHP")
+    elif wp.dry_run:
+        info("[DRY-RUN] Would write PHP-blocking .htaccess to uploads/")
     else:
         if wp.sftp_write(ht_path, htaccess_content):
             ok("Wrote PHP-blocking .htaccess to uploads/")
@@ -112,13 +115,13 @@ def nuke(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     plugins_path = wp.wp("wp-content/plugins")
     for plugin in ROGUE_PLUGINS:
         plugin_dir = f"{plugins_path}/{plugin}"
-        exists = wp.ssh(f"test -d '{plugin_dir}' && echo Y || echo N")
+        exists = wp.ssh(f"test -d {shlex.quote(plugin_dir)} && echo Y || echo N")
         if exists == "Y":
             if wp.dry_run:
                 warn(f"[DRY-RUN] Would remove plugin directory: {plugin_dir}")
                 result.add("INFO", "would-remove-plugin", plugin, plugin_dir)
             else:
-                out = wp.ssh(f"rm -rf '{plugin_dir}' && echo DONE || echo FAILED")
+                out = wp.ssh(f"rm -rf {shlex.quote(plugin_dir)} && echo DONE || echo FAILED")
                 if "DONE" in out:
                     ok(f"Removed rogue plugin: {plugin}")
                     result.add("INFO", "removed-plugin", plugin, plugin_dir)
@@ -136,9 +139,12 @@ def nuke(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
         if wp.dry_run:
             warn(f"[DRY-RUN] Would delete /tmp PHP: {path}")
         else:
-            wp.ssh(f"rm -f '{path}'")
-            ok(f"Cleared /tmp PHP: {path}")
-            deleted += 1
+            out = wp.ssh(f"rm -f {shlex.quote(path)} && echo DELETED || echo FAILED")
+            if "DELETED" in out:
+                ok(f"Cleared /tmp PHP: {path}")
+                deleted += 1
+            else:
+                err(f"Failed to clear /tmp PHP: {path}")
 
     result.stat("files_deleted", deleted)
     return result

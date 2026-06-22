@@ -84,6 +84,7 @@ def load_config(args: Namespace, config_path: Optional[str] = None) -> Namespace
     _set_if_default(args, "user",     ssh.get("user", ""))
     _set_if_default(args, "password", ssh.get("password", ""))
     _set_if_default(args, "port",     ssh.get("port", 22))
+    _set_if_default(args, "key_file", ssh.get("key_file", ""))
 
     # ── WordPress ──────────────────────────────────────────────────────
     wp = cfg.get("wordpress", {})
@@ -106,7 +107,7 @@ def load_config(args: Namespace, config_path: Optional[str] = None) -> Namespace
         args.alert_bcc = alerts.get("bcc", "")
 
     # ── Trusted / blocked CIDRs ────────────────────────────────────────
-    trusted = list(cfg.get("trusted_cidrs", []) or [])
+    trusted = _normalize_cidr_list(cfg.get("trusted_cidrs", []))
     # Auto-add provider-specific trusted CIDRs
     provider = (cfg.get("hosting", {}) or {}).get("provider", "").lower()
     if provider in _PROVIDER_TRUSTED_CIDRS:
@@ -114,8 +115,14 @@ def load_config(args: Namespace, config_path: Optional[str] = None) -> Namespace
             if cidr not in trusted:
                 trusted.append(cidr)
 
-    args.trusted_cidrs    = getattr(args, "trusted_cidrs", []) or trusted
-    args.blocked_cidrs    = getattr(args, "blocked_cidrs", []) or list(cfg.get("blocked_cidrs", []) or [])
+    # Normalize: CLI delivers --trusted-cidrs as a raw comma string; config delivers a list.
+    # _normalize_cidr_list converts either form to a list of prefix strings.
+    existing_trusted = _normalize_cidr_list(getattr(args, "trusted_cidrs", None))
+    args.trusted_cidrs = existing_trusted if existing_trusted else trusted
+
+    existing_blocked = _normalize_cidr_list(getattr(args, "blocked_cidrs", None))
+    cfg_blocked = _normalize_cidr_list(cfg.get("blocked_cidrs", []))
+    args.blocked_cidrs = existing_blocked if existing_blocked else cfg_blocked
     args.hosting_provider = getattr(args, "hosting_provider", "") or provider
 
     # ── Sibling sites ──────────────────────────────────────────────────
@@ -124,14 +131,21 @@ def load_config(args: Namespace, config_path: Optional[str] = None) -> Namespace
     return args
 
 
+def _normalize_cidr_list(raw) -> list:
+    """Convert a CLI comma-string or a config list to a list of CIDR prefix strings."""
+    if isinstance(raw, str):
+        return [v.strip() for v in raw.split(",") if v.strip()]
+    if isinstance(raw, list):
+        return [str(v).strip() for v in raw if v]
+    return []
+
+
 def _set_if_default(args: Namespace, attr: str, value) -> None:
-    """Set args.attr = value only if current value is empty/None/default."""
+    """Set args.attr = value only if the current value is the default (empty/None, or 22 for port)."""
     current = getattr(args, attr, None)
-    if current in (None, "", 22 if attr == "port" else None):
-        if attr == "port" and value == 22 and current == 22:
-            return  # 22 is the real default — don't overwrite
-        if value not in (None, ""):
-            setattr(args, attr, value)
+    is_default = current in (None, "", 22) if attr == "port" else current in (None, "")
+    if is_default and value not in (None, ""):
+        setattr(args, attr, value)
 
 
 def add_config_arg(parser) -> None:
