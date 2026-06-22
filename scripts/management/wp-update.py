@@ -77,7 +77,7 @@ def update_wp_core(wp: WPConnection, version: str, result: AuditResult) -> bool:
         result.add("HIGH", "core-update-failed", f"Download failed for WP {version}", "")
         return False
 
-    wp.ssh(f"tar -xzf {shlex.quote(tmp_tar)} -C /tmp/ 2>/dev/null")
+    wp.ssh(f"mkdir -p {shlex.quote(tmp_dir)} && tar -xzf {shlex.quote(tmp_tar)} -C {shlex.quote(tmp_dir)} 2>/dev/null")
 
     rsync = wp.ssh(
         f"rsync -a --delete"
@@ -145,12 +145,17 @@ def update_plugin(wp: WPConnection, slug: str, new_version: str, result: AuditRe
         result.add("MEDIUM", "plugin-update-failed", f"{slug}: download failed", "")
         return False
 
-    wp.ssh(
-        f"rm -rf {shlex.quote(plugins_dir + '/' + slug)} 2>/dev/null;"
-        f" unzip -q {shlex.quote(tmp_zip)} -d {shlex.quote(tmp_dir)} 2>/dev/null"
+    out = wp.ssh(
+        f"rm -rf {shlex.quote(plugins_dir + '/' + slug)} 2>/dev/null"
+        f" && unzip -q {shlex.quote(tmp_zip)} -d {shlex.quote(tmp_dir)} 2>/dev/null"
         f" && mv {shlex.quote(tmp_dir + '/' + slug)} {shlex.quote(plugins_dir + '/' + slug)}"
         f" && rm -rf {shlex.quote(tmp_zip)} {shlex.quote(tmp_dir)}"
+        f" && echo OK || echo FAIL"
     )
+    if "FAIL" in out or "OK" not in out:
+        err(f"  Replace failed for {slug}")
+        result.add("MEDIUM", "plugin-update-failed", f"{slug}: replace failed", "")
+        return False
     ok(f"  {slug} → {new_version}")
     result.add("INFO", "plugin-updated", f"{slug} updated to {new_version}", "")
     return True

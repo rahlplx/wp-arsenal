@@ -137,9 +137,12 @@ def nuke(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
         if wp.dry_run:
             warn(f"[DRY-RUN] Would delete /tmp PHP: {path}")
         else:
-            wp.ssh(f"rm -f {shlex.quote(path)}")
-            ok(f"Cleared /tmp PHP: {path}")
-            deleted += 1
+            out = wp.ssh(f"rm -f {shlex.quote(path)} && echo DELETED || echo FAILED")
+            if "DELETED" in out:
+                ok(f"Cleared /tmp PHP: {path}")
+                deleted += 1
+            else:
+                err(f"Failed to clear /tmp PHP: {path}")
 
     result.stat("files_deleted", deleted)
     return result

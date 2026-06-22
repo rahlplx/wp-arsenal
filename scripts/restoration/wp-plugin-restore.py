@@ -27,6 +27,7 @@ import re
 import shlex
 import sys
 import os
+import uuid
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from wp_connect import (
@@ -169,12 +170,15 @@ if (!in_array('{safe_rel_php}', $plugins)) {{
     echo 'ALREADY_ACTIVE';
 }}
 """
-    probe_path = f"/tmp/wpa-activate-{wp.db_prefix}{slug}.php"
+    probe_path = f"/tmp/wpa-activate-{uuid.uuid4().hex}.php"
     wp.sftp_write(probe_path, php_activate.encode())
-    wp.ssh(f"chmod 600 {shlex.quote(probe_path)}")
-    result = wp.ssh(f"php {shlex.quote(probe_path)} 2>/dev/null")
-    wp.ssh(f"rm -f {shlex.quote(probe_path)}")
-    return "ACTIVATED" in result or "ALREADY_ACTIVE" in result
+    output = ""
+    try:
+        wp.ssh(f"chmod 600 {shlex.quote(probe_path)}")
+        output = wp.ssh(f"php {shlex.quote(probe_path)} 2>/dev/null")
+    finally:
+        wp.ssh(f"rm -f {shlex.quote(probe_path)}")
+    return "ACTIVATED" in output or "ALREADY_ACTIVE" in output
 
 
 def main() -> None:

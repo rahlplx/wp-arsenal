@@ -107,7 +107,7 @@ def load_config(args: Namespace, config_path: Optional[str] = None) -> Namespace
         args.alert_bcc = alerts.get("bcc", "")
 
     # ── Trusted / blocked CIDRs ────────────────────────────────────────
-    trusted = list(cfg.get("trusted_cidrs", []) or [])
+    trusted = _normalize_cidr_list(cfg.get("trusted_cidrs", []))
     # Auto-add provider-specific trusted CIDRs
     provider = (cfg.get("hosting", {}) or {}).get("provider", "").lower()
     if provider in _PROVIDER_TRUSTED_CIDRS:
@@ -121,7 +121,8 @@ def load_config(args: Namespace, config_path: Optional[str] = None) -> Namespace
     args.trusted_cidrs = existing_trusted if existing_trusted else trusted
 
     existing_blocked = _normalize_cidr_list(getattr(args, "blocked_cidrs", None))
-    args.blocked_cidrs = existing_blocked if existing_blocked else list(cfg.get("blocked_cidrs", []) or [])
+    cfg_blocked = _normalize_cidr_list(cfg.get("blocked_cidrs", []))
+    args.blocked_cidrs = existing_blocked if existing_blocked else cfg_blocked
     args.hosting_provider = getattr(args, "hosting_provider", "") or provider
 
     # ── Sibling sites ──────────────────────────────────────────────────
@@ -135,7 +136,7 @@ def _normalize_cidr_list(raw) -> list:
     if isinstance(raw, str):
         return [v.strip() for v in raw.split(",") if v.strip()]
     if isinstance(raw, list):
-        return [str(v) for v in raw if v]
+        return [str(v).strip() for v in raw if v]
     return []
 
 

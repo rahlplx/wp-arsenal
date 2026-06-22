@@ -34,22 +34,32 @@ from wp_connect import (
 
 def backup_database(wp: WPConnection, backup_dir: str, label: str) -> str | None:
     """Create MySQL dump, return remote path or None on failure."""
+    raw_path = f"{backup_dir}/{label}-db.sql"
     dump_path = f"{backup_dir}/{label}-db.sql.gz"
     info(f"Dumping database to {dump_path}...")
 
-    cmd = (
+    # Dump to a raw SQL file first — a pipe only checks gzip's exit code, not mysqldump's.
+    dump_cmd = (
         f"MYSQL_PWD={shlex.quote(wp.db_pass)} "
         f"mysqldump"
         f" -h {shlex.quote(wp.db_host)}"
         f" -u {shlex.quote(wp.db_user)}"
         f" {shlex.quote(wp.db_name)}"
-        f" 2>/dev/null"
-        f" | gzip > {shlex.quote(dump_path)}"
-        f" && echo OK || echo FAIL"
+        f" > {shlex.quote(raw_path)}"
+        f" 2>/dev/null && echo OK || echo FAIL"
     )
-    result = wp.ssh(cmd, timeout=300)
-    if "FAIL" in result or "OK" not in result:
+    dump_result = wp.ssh(dump_cmd, timeout=300)
+    if "FAIL" in dump_result or "OK" not in dump_result:
         err("Database dump failed")
+        wp.ssh(f"rm -f {shlex.quote(raw_path)}")
+        return None
+
+    gzip_result = wp.ssh(
+        f"gzip -f {shlex.quote(raw_path)} && echo OK || echo FAIL"
+    )
+    if "FAIL" in gzip_result or "OK" not in gzip_result:
+        err("Database gzip failed")
+        wp.ssh(f"rm -f {shlex.quote(raw_path)}")
         return None
 
     size = wp.ssh(f"du -sh {shlex.quote(dump_path)} 2>/dev/null | cut -f1")

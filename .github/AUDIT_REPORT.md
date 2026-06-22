@@ -80,9 +80,9 @@ Eight medium-severity issues remain, mostly around prefix-only CIDR matching, th
 
 | ID | Severity | OWASP | File | Description | Fix |
 |---|---|---|---|---|---|
-| S-1 | ✅ **FIXED** | A02 Crypto Failures | `wp_connect.py` | `paramiko.AutoAddPolicy()` → upgraded to `WarningPolicy()` which warns on unknown host keys (pragmatic for diverse hosting). Wires `known_hosts` if `~/.ssh/known_hosts` exists. |
-| S-2 | ✅ **FIXED** | A05 Security Misconfiguration | `wp_connect.py`, `config_loader.py` | `key_filename=self.key_file or None` now passed to `paramiko.connect()`; `--key-file` added to `add_connection_args()`; `key_file` mapped in `config_loader.load_config()`. |
-| S-3 | ✅ **FIXED** | A03 Injection | `wp_connect.py`, all scripts | Removed `replace("\\", "\\\\")` from `db()`. All `mysqldump` calls now use `MYSQL_PWD={shlex.quote(db_pass)} mysqldump -h {shlex.quote(host)} ...` — handles every special character safely. |
+| S-1 | ✅ **FIXED** | A02 Crypto Failures | `wp_connect.py` | `paramiko.AutoAddPolicy()` → upgraded to `WarningPolicy()` which warns on unknown host keys (pragmatic for diverse hosting). Wires `known_hosts` if `~/.ssh/known_hosts` exists. | — |
+| S-2 | ✅ **FIXED** | A05 Security Misconfiguration | `wp_connect.py`, `config_loader.py` | `key_filename=self.key_file or None` now passed to `paramiko.connect()`; `--key-file` added to `add_connection_args()`; `key_file` mapped in `config_loader.load_config()`. | — |
+| S-3 | ✅ **FIXED** | A03 Injection | `wp_connect.py`, all scripts | Removed `replace("\\", "\\\\")` from `db()`. All `mysqldump` calls now use `MYSQL_PWD={shlex.quote(db_pass)} mysqldump -h {shlex.quote(host)} ...` — handles every special character safely. | — |
 
 ```python
 # BEFORE (wp_connect.py:257) — buggy
@@ -96,7 +96,7 @@ pass_escaped = self.db_pass.replace("'", "'\\''")
 
 | ID | Severity | OWASP | File | Description | Fix |
 |---|---|---|---|---|---|
-| S-4 | ✅ **FIXED** | A03 Injection | All scripts (20 files) | All SSH commands now wrap every interpolated value in `shlex.quote()`: paths, DB host/user/name/table, archive filenames, URLs. Paths sourced from remote `find`/`grep`/`ls` output (highest-risk — attacker-plantable filenames) are specifically hardened. |
+| S-4 | ✅ **FIXED** | A03 Injection | All scripts (20 files) | All SSH commands now wrap every interpolated value in `shlex.quote()`: paths, DB host/user/name/table, archive filenames, URLs. Paths sourced from remote `find`/`grep`/`ls` output (highest-risk — attacker-plantable filenames) are specifically hardened. | — |
 | S-5 | **Medium** | A05 Security Misconfiguration | `ip-blocker.php`, `admin-guard.php`, `rate-limiter.php`, `login-monitor.php` | All four plugins perform CIDR matching via `str_starts_with($ip, $cidr)`. The config example shows `198.51.100.0/24` as a valid entry, but `str_starts_with('198.51.100.5', '198.51.100.0/24')` returns `false`. Operators who follow the example literally will believe they blocked a /24 range when they have not. | (a) Update all config examples and comments to use prefix notation (`198.51.100.` not `198.51.100.0/24`), and (b) add a PHP function `wp_arsenal_cidr_match($ip, $cidr)` that supports standard CIDR notation for IPv4. |
 
 ```php

@@ -122,8 +122,10 @@ def fix_permissions(wp: WPConnection, args: argparse.Namespace) -> AuditResult:
     if ht_perm and ht_perm != "644":
         if not wp.dry_run:
             wp.ssh(f"chmod 644 {shlex.quote(wp.wp('.htaccess'))}")
-        ok(".htaccess set to 644")
-        fixed += 1
+            ok(".htaccess set to 644")
+            fixed += 1
+        else:
+            info("[DRY-RUN] Would chmod 644 .htaccess")
     elif ht_perm == "644":
         ok(".htaccess already 644")
 
